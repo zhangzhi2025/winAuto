@@ -8,6 +8,8 @@ set(WINAUTO_TEST_SOURCES
     test_window_hotkey.cpp
     test_input_plan.cpp
     test_uia_match.cpp
+    test_editor.cpp
+    test_debug_gate.cpp
 )
 
 foreach(src ${WINAUTO_TEST_SOURCES})

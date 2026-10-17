@@ -15,6 +15,8 @@ add_library(winauto_core STATIC
     Summary.cpp
     ControlType.cpp
     UiaMatch.cpp
+    WorkflowEditor.cpp
+    DebugGate.cpp
 )
 target_include_directories(winauto_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # nlohmann/json 仅在 .cpp 内使用，不暴露给使用者

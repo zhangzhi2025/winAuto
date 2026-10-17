@@ -157,3 +157,21 @@ TEST(locator_to_json_roundtrips_through_workflow_reader) {
     CHECK(back != nullptr);
     CHECK_EQ(back->automationId, std::string("btnOk"));
 }
+
+TEST(read_locator_json_accepts_fallback_and_reports_errors) {
+    auto ok = readLocatorJson(
+        "{\"strategy\":\"fallback\",\"locators\":[{\"strategy\":\"uia\",\"automationId\":\"a\"},"
+        "{\"strategy\":\"window_point\",\"x\":5,\"y\":6}]}");
+    CHECK(ok.ok());
+    const auto* fb = std::get_if<FallbackLocator>(&ok.value);
+    CHECK(fb != nullptr);
+    CHECK_EQ(fb->items.size(), static_cast<size_t>(2));
+
+    auto bad = readLocatorJson("{\"strategy\":\"nope\"}");
+    CHECK(!bad.ok());
+    CHECK_CONTAINS(bad.detail, "unknown strategy");
+    CHECK(!readLocatorJson("{oops").ok());
+    CHECK(!readLocatorJson("{}").ok());
+    auto nested = readLocatorJson("{\"strategy\":\"fallback\",\"locators\":[{\"strategy\":\"fallback\"}]}");
+    CHECK_CONTAINS(nested.detail, "nested");
+}

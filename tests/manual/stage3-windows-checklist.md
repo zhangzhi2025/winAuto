@@ -5,7 +5,7 @@
 **用空白记事本和计算器验证，不要碰有未保存内容的窗口。** 以下 `cli` 指 `build\cli\Debug\winauto-cli.exe`。
 
 ## 0. 编译
-- [ ] 重新构建，`ctest -C Debug` 全部通过（应为 13 个测试项）。
+- [ ] 重新构建，`ctest -C Debug` 全部通过（应为 13 个测试项（阶段 4 起为 15 个））。
 - [ ] 若 `platform_win` 或 `cli` 编译/链接报错（尤其 `UIAutomation.h`、`wrl/client.h`、`__uuidof`、链接 ole32/oleaut32/uuid），把完整错误贴给我。
 
 ## 1. inspect

@@ -1,6 +1,7 @@
 #include "core/Engine.h"
 
 #include <algorithm>
+#include <set>
 #include <map>
 
 #include "core/Validator.h"
@@ -360,8 +361,20 @@ RunReport WorkflowEngine::run(const Workflow& wf, const CancelToken& token,
     run.setState(ExecutionState::Running);
     run.log(LogLevel::Info, "", "run started: " + wf.name);
 
-    // 预检：所有目标窗口必须存在且未提权，之后才执行第一步
+    const size_t total = wf.steps.size();
+    const size_t first = options.firstStep.value_or(0);
+    const size_t last = options.lastStep ? std::min(*options.lastStep, total ? total - 1 : 0) : (total ? total - 1 : 0);
+    if (total == 0 || first > last) {
+        return run.fail(ErrCode::InvalidWorkflow, "", "step range is empty or out of bounds");
+    }
+
+    // 预检：范围内用到的目标窗口必须存在且未提权，之后才执行第一步
+    std::set<std::string> used;
+    for (size_t i = first; i <= last; ++i) {
+        if (!wf.steps[i].window.empty()) used.insert(wf.steps[i].window);
+    }
     for (const auto& [alias, spec] : wf.windows) {
+        if (!used.count(alias)) continue;
         Result<std::uint64_t> r = run.resolveWindow(spec);
         if (r.code == ErrCode::Cancelled) return run.cancelled("");
         if (!r.ok()) {
@@ -375,8 +388,25 @@ RunReport WorkflowEngine::run(const Workflow& wf, const CancelToken& token,
     std::string firstStep;
     std::string firstDetail;
 
-    for (const Step& step : wf.steps) {
+    for (size_t index = first; index <= last; ++index) {
+        const Step& step = wf.steps[index];
         if (token.isCancelled()) return run.cancelled(step.id);
+
+        if (deps_.beforeStep) {
+            const StepGate gate = deps_.beforeStep(step, index);
+            if (token.isCancelled() || gate == StepGate::Stop) return run.cancelled(step.id);
+            if (gate == StepGate::Skip) {
+                StepRecord skipped;
+                skipped.stepId = step.id;
+                skipped.type = toString(step.type);
+                skipped.skipped = true;
+                skipped.detail = "skipped by user";
+                run.log(LogLevel::Info, step.id, "step skipped by user");
+                run.report.steps.push_back(skipped);
+                if (deps_.observer.onStepFinished) deps_.observer.onStepFinished(skipped);
+                continue;
+            }
+        }
 
         StepRecord rec = run.runStep(step);
         run.report.steps.push_back(rec);

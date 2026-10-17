@@ -11,7 +11,7 @@
 | 1 窗口管理 + 全局停止热键 | 🟡 代码完成，待 Windows 验证 | 判断逻辑已测试；Win32 层未编译过，见 `tests/manual/stage1-windows-checklist.md`。窗口选择器 UI 并入阶段 4 |
 | 2 动作引擎 + `winauto-cli run` | 🟡 代码完成，待 Windows 验证 | 坐标点击、文本、组合键、信任确认、停止热键；清单见 `tests/manual/stage2-windows-checklist.md` |
 | 3 UIA 定位 | 🟡 代码完成，待 Windows 验证 | 控件树快照 + core 匹配/诊断/定位建议；`inspect` / `pick` 命令；Invoke / Value；清单见 `tests/manual/stage3-windows-checklist.md` |
-| 4 流程编辑器 UI | 未开始 | |
+| 4 流程编辑器 UI | 🟡 代码完成，待 Windows 编译与验证 | 步骤列表/属性面板/窗口选择/控件拾取/单步调试/运行日志；清单见 `tests/manual/stage4-windows-checklist.md` |
 | 5 图像识别 | 未开始（第二里程碑） | |
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
@@ -75,12 +75,14 @@ core/          纯标准 C++17，不依赖 Qt / Win32（CTest 的 core_purity �
   StopHotkey   IStopHotkey 接口 + 热键到取消令牌的守卫
   InputPlan    文本/组合键 -> 按键序列、鼠标坐标归一化、窗口点解析（纯逻辑）
   Summary      运行前的信任摘要
+  WorkflowEditor 编辑器视图模型：增删改移步骤、窗口别名重命名、撤销/重做、校验问题归属到步骤（UI 只转发）
+  DebugGate    单步/暂停/继续/跳过/停止的线程安全闸门（引擎每步之前调用）
   UiaSnapshot  UI 树快照（纯数据）；UiaMatch 在快照上匹配、判唯一、失败诊断、生成定位建议；ControlType 控件类型表
   CancelToken  线程安全取消令牌，等待可被立即打断
   Logger       执行日志与敏感信息脱敏
 platform_win/  Windows 适配器：窗口枚举/激活/提权检测、DPI、全局热键线程、SendInput、UI Automation（薄封装，逻辑在 core）
 cli/           winauto-cli
-ui/            Qt 5.15 Widgets（目前仅占位窗口）
+ui/            Qt 5.15 Widgets：MainWindow、StepPanel、WindowPickerDialog、WindowsDialog、ElementPickerDialog、RunController（逻辑都在 core，这里只做界面）
 schemas/       workflow.schema.json（draft-07，仅作文档和编辑器提示）
 examples/      示例流程
 tests/         单元测试、Fake 适配器、Schema / 纯净性检查
@@ -146,6 +148,17 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 命令：`inspect <进程> [标题] [--max N]` 输出缩进的控件树；`pick <进程> [标题] [--delay S]` 倒计时后取鼠标下的控件并输出可直接粘贴的 locator（优先 automationId，其次 name 并警告名称易变，都不唯一则建议 window_point）。
 - 不可用时（COM 初始化失败等）uia 策略返回 `Unsupported`，fallback 链会跳过它。
 
+## 图形界面约定（阶段 4）
+- `winauto-ui [流程.json]`。左侧步骤列表（红 = 有错误，黄 = 有警告，悬停看原因），右侧属性面板，底部运行日志。
+- 编辑规则全在 core 的 `WorkflowEditor`（有单元测试）：步骤 id 唯一；窗口别名重命名会同步所有引用；仍被引用的别名不能删除；全部操作可撤销/重做。
+- 定位器在面板里以 JSON 编辑（支持 fallback），也可点"拾取控件…"：读取控件树 → 选中或"鼠标拾取" → 自动生成最稳的定位器；JSON 有误时不会提交半成品。
+- 运行前一定弹出**信任摘要**（目标程序、将输入的文本、将按的键；敏感文本不显示），默认按钮是"取消"；高风险操作还需输入 `RISK`。
+- 没有紧急停止热键（Ctrl+Alt+F10）就拒绝运行；运行在后台线程，界面保持响应。
+- 调试：F5 运行全部 · Ctrl+F5 只运行选中步骤 · F11 从头单步 · F10 执行当前步 · F9 跳过 · F8 继续 · F6 暂停 · Shift+F5 停止。
+  停在某一步之前时该行高亮；跳过的步骤在日志里标记。只运行选中步骤时，窗口预检只检查这一步用到的窗口。
+- 运行时询问的敏感文本（`textFrom: prompt`）用密码框询问，不落盘。
+- 保存使用原子写入（QSaveFile），不会写一半损坏原文件。
+
 ## 已知限制
 
 0. 弹出菜单、下拉框是独立顶层窗口：UIA 定位只读取目标窗口自己的控件树，读不到它们；坐标点击也会因"不在目标窗口上"被拒绝。需要时可把弹出窗口配成另一个窗口别名（用 titleContains 区分）。
@@ -155,7 +168,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 2. **步骤超时无法抢占阻塞中的平台调用。** 引擎在等待和轮询处响应取消与超时；一次卡死的 UIA / Win32 调用需要平台层自己设置超时（阶段 1/3 处理）。
 3. `image` 定位器能被读取和校验，但会给出 `unsupported_in_mvp` 警告，运行时不可用（阶段 5）。
 4. `screenshotOnFailure` 字段已进入模型，截图本身尚未实现。
-5. **阶段 2–3 的 `platform_win/`（输入、点位定位、UI Automation）、CLI 的 `run` / `inspect` / `pick` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
+5. **阶段 4 的 `ui/` 全部（Qt 5.15）从未被编译过**（容器里没有 Qt）。阶段 2–3 的 `platform_win/`（输入、点位定位、UI Automation）、CLI 的 `run` / `inspect` / `pick` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
    它们只用手写的 Win32 桩做过语法检查，签名是否与真实 SDK 一致尚未验证。
    core、cli（非 Windows 分支）、测试已在 GCC 13 / clang 下通过，含 ASan / UBSan / TSan，`-Werror` 零警告。
 6. 示例里的控件 `automationId` 只用于演示，必须用实际窗口探测确认；不同版本的记事本控件树不同。
@@ -163,7 +176,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 ## 测试
 
 ```
-test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan / test_uia_match
+test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan / test_uia_match / test_editor / test_debug_gate
 core_purity            core/ 不得引用 Win32 / COM / Qt 头文件
 cli_validate_examples  CLI 冒烟
 schema_examples        Schema 校验示例（需要 Python + jsonschema，没有则自动跳过）

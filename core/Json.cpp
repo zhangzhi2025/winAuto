@@ -29,6 +29,8 @@ class Reader {
 public:
     explicit Reader(Workflow& wf) : wf_(wf) {}
 
+    Locator readLocatorPublic(const json& v, const std::string& path) { return readLocator(v, path); }
+
     void readRoot(const json& root) {
         if (!root.is_object()) throw ReadError{"", "root must be a JSON object"};
         noteUnknown(root, {"schemaVersion", "id", "name", "windows", "execution", "steps"}, "");
@@ -438,6 +440,21 @@ Result<Workflow> readWorkflow(const std::string& jsonText) {
         return Result<Workflow>::failure(ErrCode::InvalidWorkflow, where + ": " + e.message);
     }
     return Result<Workflow>::success(std::move(wf));
+}
+
+Result<Locator> readLocatorJson(const std::string& jsonText) {
+    json root;
+    try {
+        root = json::parse(jsonText);
+    } catch (const json::parse_error& e) {
+        return Result<Locator>::failure(ErrCode::InvalidWorkflow, std::string("JSON syntax error: ") + e.what());
+    }
+    Workflow scratch;  // Reader 需要一个工作流来记录未知字段，这里用不上
+    try {
+        return Result<Locator>::success(Reader(scratch).readLocatorPublic(root, "locator"));
+    } catch (const ReadError& e) {
+        return Result<Locator>::failure(ErrCode::InvalidWorkflow, e.path + ": " + e.message);
+    }
 }
 
 std::string locatorToJson(const Locator& locator, int indent) { return writeLocator(locator).dump(indent); }

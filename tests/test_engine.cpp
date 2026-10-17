@@ -20,6 +20,7 @@ struct Env {
     CancelToken token;
     PromptFn prompt;
     EngineObserver observer;
+    StepGateFn gate;
 
     Env() { windows.windows.push_back(FakeWindowProvider::window(1, "notepad.exe", "Untitled")); }
 
@@ -31,6 +32,7 @@ struct Env {
         deps.clock = &clock;
         deps.prompt = prompt;
         deps.observer = observer;
+        deps.beforeStep = gate;
         WorkflowEngine engine(deps);
         return engine.run(wf, token, options);
     }
@@ -594,4 +596,73 @@ TEST(wait_for_element_does_not_require_enabled) {
     w.locator = Locator{uia("x", "Button")};
     RunReport r = env.run(flow({w}));
     CHECK(r.state == ExecutionState::Succeeded);
+}
+
+// ------------------------------------------------------------ 调试：步骤范围与闸门
+
+TEST(step_range_runs_only_selected_steps) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("b", true); };
+    RunOptions o;
+    o.firstStep = 1;
+    o.lastStep = 1;
+    RunReport r = env.run(flow({clickStep("S1"), clickStep("S2"), clickStep("S3")}), o);
+    CHECK(r.state == ExecutionState::Succeeded);
+    CHECK_EQ(r.steps.size(), static_cast<size_t>(1));
+    CHECK_EQ(r.steps[0].stepId, std::string("S2"));
+}
+
+TEST(step_range_out_of_bounds_is_rejected) {
+    Env env;
+    RunOptions o;
+    o.firstStep = 5;
+    RunReport r = env.run(flow({clickStep("S1")}), o);
+    CHECK(r.state == ExecutionState::Failed);
+    CHECK(r.code == ErrCode::InvalidWorkflow);
+    CHECK(env.input.actions.empty());
+}
+
+TEST(preflight_only_checks_windows_used_by_the_range) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("b", true); };
+    Workflow wf = flow({clickStep("S1"), clickStep("S2")});
+    wf.windows["other"] = WindowSpec{"missing.exe", "", 200};
+    wf.steps[1].window = "other";
+    RunOptions o;
+    o.firstStep = 0;
+    o.lastStep = 0;
+    RunReport ok = env.run(wf, o);  // 只跑 S1：不要求 other 存在
+    CHECK(ok.state == ExecutionState::Succeeded);
+    RunReport bad = env.run(wf);  // 整个流程：other 缺失，第一步之前就失败
+    CHECK(bad.code == ErrCode::WindowNotFound);
+}
+
+TEST(gate_can_skip_and_stop) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("b", true); };
+    env.gate = [](const Step& s, size_t) { return s.id == "S2" ? StepGate::Skip : StepGate::Run; };
+    RunReport r = env.run(flow({clickStep("S1"), clickStep("S2"), clickStep("S3")}));
+    CHECK(r.state == ExecutionState::Succeeded);
+    CHECK_EQ(r.steps.size(), static_cast<size_t>(3));
+    CHECK(r.steps[1].skipped);
+    CHECK_EQ(env.input.actions.size(), static_cast<size_t>(2));  // S2 没有执行
+
+    Env env2;
+    env2.locator.handler = [](const LeafLocator&, int) { return found("b", true); };
+    env2.gate = [](const Step& s, size_t) { return s.id == "S2" ? StepGate::Stop : StepGate::Run; };
+    RunReport r2 = env2.run(flow({clickStep("S1"), clickStep("S2"), clickStep("S3")}));
+    CHECK(r2.state == ExecutionState::Cancelled);
+    CHECK_EQ(env2.input.actions.size(), static_cast<size_t>(1));
+}
+
+TEST(gate_sees_step_index_in_order) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("b", true); };
+    std::string seen;
+    env.gate = [&](const Step& s, size_t i) {
+        seen += s.id + std::to_string(i) + ",";
+        return StepGate::Run;
+    };
+    env.run(flow({clickStep("S1"), clickStep("S2")}));
+    CHECK_EQ(seen, std::string("S10,S21,"));
 }

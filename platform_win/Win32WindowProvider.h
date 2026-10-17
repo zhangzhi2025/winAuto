@@ -21,6 +21,7 @@ public:
     Result<WindowInfo> findWindow(const WindowSpec& spec) override;
     Status activateWindow(std::uint64_t handle) override;
     bool isWindowValid(std::uint64_t handle) override;
+    bool isForeground(std::uint64_t handle) override;
     bool isSelfElevated() override { return selfElevated_; }
 
 private:

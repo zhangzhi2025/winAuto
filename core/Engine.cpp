@@ -112,15 +112,33 @@ struct WorkflowEngine::Run {
     }
 
     // ------------------------------------------------------------ 定位
-    // 单次定位。fallback：只有 ElementNotFound 才进入下一个，歧义等其他错误直接失败。
+    // 单次定位。fallback 规则：
+    //   - ElementNotFound：试下一个
+    //   - Unsupported（该策略当前平台不可用，如还没实现的 uia/image）：跳过，试下一个
+    //   - 其他错误（歧义、取消、窗口丢失等）：立刻失败，绝不继续猜
+    //   - 全部走完：只要有过"没找到"就报 ElementNotFound；全部都不可用则保持 Unsupported，
+    //     不把"做不到"伪装成"没找到"（否则会被当作可重试的错误）
     Result<ElementRef> locateOnce(std::uint64_t handle, const Locator& loc) {
         if (const auto* fb = std::get_if<FallbackLocator>(&loc)) {
+            bool sawNotFound = false;
+            std::string unsupportedDetail;
             for (const auto& item : fb->items) {
                 Result<ElementRef> r = deps.locator->locate(handle, item, token);
-                if (r.ok() || r.code != ErrCode::ElementNotFound) return r;
+                if (r.ok()) return r;
+                if (r.code == ErrCode::ElementNotFound) {
+                    sawNotFound = true;
+                } else if (r.code == ErrCode::Unsupported) {
+                    if (unsupportedDetail.empty()) unsupportedDetail = r.detail;
+                } else {
+                    return r;
+                }
             }
-            return Result<ElementRef>::failure(ErrCode::ElementNotFound,
-                                               "no locator in the fallback chain matched");
+            if (sawNotFound) {
+                return Result<ElementRef>::failure(ErrCode::ElementNotFound,
+                                                   "no locator in the fallback chain matched");
+            }
+            return Result<ElementRef>::failure(
+                ErrCode::Unsupported, "no locator in the fallback chain is available: " + unsupportedDetail);
         }
         LeafLocator leaf;
         if (!asLeaf(loc, &leaf)) return Result<ElementRef>::failure(ErrCode::Internal, "bad locator");
@@ -150,6 +168,12 @@ struct WorkflowEngine::Run {
     // ------------------------------------------------------------ 单步
     int timeoutFor(const Step& s) const { return s.timeoutMs.value_or(wf.execution.stepTimeoutMs); }
 
+    static Status notForeground(const Step& s) {
+        return Status::failure(ErrCode::InputBlocked,
+                               "target window \"" + s.window +
+                                   "\" is not in the foreground; add an activate_window step before keyboard input");
+    }
+
     Status execOnce(const Step& s, std::uint64_t handle, const std::string& text) {
         switch (s.type) {
             case StepType::ActivateWindow:
@@ -162,7 +186,7 @@ struct WorkflowEngine::Run {
                 if (s.clickMode == ClickMode::Auto && r.value.supportsInvoke) {
                     return deps.input->invoke(r.value);
                 }
-                return deps.input->clickPoint(r.value.bounds.center());
+                return deps.input->clickPoint(r.value.bounds.center(), handle);
             }
 
             case StepType::SetValue: {
@@ -177,9 +201,11 @@ struct WorkflowEngine::Run {
             }
 
             case StepType::InputText:
+                if (!deps.windows->isForeground(handle)) return notForeground(s);
                 return deps.input->typeText(text, s.method);
 
             case StepType::Hotkey: {
+                if (!deps.windows->isForeground(handle)) return notForeground(s);
                 std::vector<std::string> keys;
                 for (const auto& k : s.keys) keys.push_back(normalizeKey(k));
                 return deps.input->hotkey(keys);

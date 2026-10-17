@@ -35,7 +35,7 @@ TEST(reads_notepad_example) {
 }
 
 TEST(examples_pass_the_validator) {
-    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json"}) {
+    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json"}) {
         Workflow wf = mustRead(testutil::exampleText(name));
         auto report = validateWorkflow(wf);
         CHECK(report.ok());
@@ -46,7 +46,7 @@ TEST(examples_pass_the_validator) {
 }
 
 TEST(read_write_roundtrip_matches_original_json) {
-    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json"}) {
+    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json"}) {
         const std::string text = testutil::exampleText(name);
         Workflow wf = mustRead(text);
         const std::string out = writeWorkflow(wf);

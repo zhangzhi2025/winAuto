@@ -32,6 +32,8 @@ public:
     virtual Result<WindowInfo> findWindow(const WindowSpec& spec) = 0;
     virtual Status activateWindow(std::uint64_t handle) = 0;
     virtual bool isWindowValid(std::uint64_t handle) = 0;
+    // 目标窗口（或其子窗口）是否在前台。键盘输入只会发给前台窗口，引擎在输入前必须确认。
+    virtual bool isForeground(std::uint64_t handle) = 0;
     virtual bool isSelfElevated() = 0;
 };
 
@@ -55,7 +57,9 @@ public:
 class IInputController {
 public:
     virtual ~IInputController() = default;
-    virtual Status clickPoint(Point screenPoint) = 0;
+    // windowHandle：点击必须落在该窗口上。实现需确认落点处最上层的窗口属于它（防止被其他窗口遮挡时误点）；
+    // 为 0 表示不检查。
+    virtual Status clickPoint(Point screenPoint, std::uint64_t windowHandle) = 0;
     virtual Status invoke(const ElementRef& element) = 0;
     virtual Status setValue(const ElementRef& element, const std::string& text) = 0;
     virtual Status typeText(const std::string& text, InputMethod method) = 0;

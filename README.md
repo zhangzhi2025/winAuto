@@ -9,7 +9,7 @@
 |---|---|---|
 | 0 工程基础 | ✅ 完成 | core 层全部落地并有测试；platform_win / ui 为占位 |
 | 1 窗口管理 + 全局停止热键 | 🟡 代码完成，待 Windows 验证 | 判断逻辑已测试；Win32 层未编译过，见 `tests/manual/stage1-windows-checklist.md`。窗口选择器 UI 并入阶段 4 |
-| 2 动作引擎 + `winauto-cli run` | 未开始 | 引擎已能用 Fake 跑通，缺平台适配器 |
+| 2 动作引擎 + `winauto-cli run` | 🟡 代码完成，待 Windows 验证 | 坐标点击、文本、组合键、信任确认、停止热键；清单见 `tests/manual/stage2-windows-checklist.md` |
 | 3 UIA 定位 | 未开始 | |
 | 4 流程编辑器 UI | 未开始 | |
 | 5 图像识别 | 未开始（第二里程碑） | |
@@ -48,7 +48,17 @@ winauto-cli activate notepad.exe [标题片段]  :: 查找并激活，拒绝提�
 winauto-cli stop-hotkey-test [ctrl+alt+f10] :: 验证全局停止热键
 ```
 
-退出码：0 通过；1 失败；2 用法错误；3 功能未实现（`run` 将在阶段 2 提供）。
+执行流程（仅 Windows）：
+
+```bat
+winauto-cli run examples\notepad-coordinates-demo.json
+winauto-cli run flow.json --yes --confirm-risks --hotkey ctrl+alt+f9
+```
+
+`run` 的流程：校验 → 展示**信任摘要**（目标程序、将输入的文本、将按的键；敏感文本不显示）→ 要求输入 `yes` 确认
+（含高风险操作时还要输入 `RISK`）→ 注册紧急停止热键（**注册失败则拒绝运行**）→ 执行 → 汇总结果。
+
+退出码：0 成功；1 失败（校验未通过、执行失败、被拒绝）；2 用法错误；3 当前平台不支持；4 被用户取消。
 
 ## 目录结构
 
@@ -63,6 +73,8 @@ core/          纯标准 C++17，不依赖 Qt / Win32（CTest 的 core_purity �
   WindowMatcher 窗口匹配与唯一性判定（纯逻辑）
   VirtualKey   按键名 <-> 虚拟键码，全局热键解析
   StopHotkey   IStopHotkey 接口 + 热键到取消令牌的守卫
+  InputPlan    文本/组合键 -> 按键序列、鼠标坐标归一化、窗口点解析（纯逻辑）
+  Summary      运行前的信任摘要
   CancelToken  线程安全取消令牌，等待可被立即打断
   Logger       执行日志与敏感信息脱敏
 platform_win/  Windows 适配器：窗口枚举/激活/提权检测、DPI、全局热键线程（薄封装，逻辑在 core）
@@ -107,14 +119,28 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 全局停止热键默认 `CTRL+ALT+F10`（Pause 键在许多笔记本上没有，F12 被调试器保留）。
   热键必须带修饰键。注册失败（被占用）时，调用方应拒绝启动流程。
 
+## 输入与点击的安全约定（阶段 2）
+
+- **键盘输入前必须确认目标窗口在前台**，否则 `InputBlocked`，不会把字符打到别的窗口。流程里需要先有 `activate_window`。
+- **点击前确认落点最上层窗口属于目标窗口**，被遮挡、落在弹出菜单/对话框上或窗口之外时拒绝点击。
+- 点击要求进程为 Per-Monitor V2 DPI 感知（CLI 启动时自动设置），否则拒绝，避免偏位。
+- `window_point` 基准是 client 区域；`ratio` 的 0 和 1 分别是第一个和最后一个像素；落在 client 区域外或窗口最小化 → `ElementNotFound`。
+- 文本经严格的 UTF-8 校验后按 Unicode 事件发送（代理对正确处理）；`\n`/`\r\n` 发送为回车，`\t` 为 Tab；其他控制字符被拒绝。
+- 组合键：修饰键先按、主键后按，反向释放；发送中途失败会尽力释放所有键，防止修饰键卡住。
+- 敏感或运行时询问的文本不允许使用剪贴板输入（剪贴板历史/同步会留存），校验阶段直接报错。
+- 向更高权限窗口发送输入会被系统**静默丢弃**且不报错（UIPI），所以引擎在第一步前的提权预检是必需的，不能绕过。
+- `fallback` 会跳过"当前版本不支持"的策略（如阶段 2 的 `uia`），只有全部不支持时才报 `Unsupported`；歧义仍然直接失败。
+
 ## 已知限制
 
+0. 弹出菜单、下拉框、对话框是独立顶层窗口，坐标点击会因"不在目标窗口上"被拒绝，需等 UIA（阶段 3）。
+   剪贴板输入未实现（`Unsupported`）。一次性发送的长文本无法中途取消。
 1. **重试会重新执行动作本身。** 对 `input_text` 配置 `expect` + `retry` 时，若校验失败，文本会被再输入一次。
    对有副作用的动作，请谨慎配置重试。
 2. **步骤超时无法抢占阻塞中的平台调用。** 引擎在等待和轮询处响应取消与超时；一次卡死的 UIA / Win32 调用需要平台层自己设置超时（阶段 1/3 处理）。
 3. `image` 定位器能被读取和校验，但会给出 `unsupported_in_mvp` 警告，运行时不可用（阶段 5）。
 4. `screenshotOnFailure` 字段已进入模型，截图本身尚未实现。
-5. **`platform_win/`、CLI 的 Windows 分支和 `ui/` 从未在 Windows 上编译过**（开发环境是 Linux 容器）。
+5. **阶段 2 的 `platform_win/`（输入、点位定位）、CLI 的 `run` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
    它们只用手写的 Win32 桩做过语法检查，签名是否与真实 SDK 一致尚未验证。
    core、cli（非 Windows 分支）、测试已在 GCC 13 / clang 下通过，含 ASan / UBSan / TSan，`-Werror` 零警告。
 6. 示例里的控件 `automationId` 只用于演示，必须用实际窗口探测确认；不同版本的记事本控件树不同。
@@ -122,7 +148,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 ## 测试
 
 ```
-test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey
+test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan
 core_purity            core/ 不得引用 Win32 / COM / Qt 头文件
 cli_validate_examples  CLI 冒烟
 schema_examples        Schema 校验示例（需要 Python + jsonschema，没有则自动跳过）

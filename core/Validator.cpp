@@ -199,6 +199,15 @@ public:
 
         if (s.type == StepType::InputText || s.type == StepType::SetValue) {
             const bool hasText = s.text.has_value();
+            if (s.type == StepType::InputText && s.method == InputMethod::Clipboard) {
+                if (s.sensitive || s.textFromPrompt) {
+                    error(sub(path, "method"), "sensitive_clipboard",
+                          "sensitive or prompted text must not go through the clipboard "
+                          "(clipboard history and sync can store it)");
+                }
+                warn(sub(path, "method"), "unsupported_in_mvp",
+                     "clipboard input is not available yet and will fail at run time");
+            }
             if (hasText && s.textFromPrompt) {
                 error(path, "text_conflict", "text and textFrom=prompt cannot be used together");
             } else if (!hasText && !s.textFromPrompt) {

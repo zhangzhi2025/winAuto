@@ -20,6 +20,19 @@ bool enablePerMonitorDpiAwareness() {
     return SetProcessDPIAware() != FALSE;  // 退化为系统级 DPI 感知
 }
 
+bool isPerMonitorV2Aware() {
+    using GetCtxFn = DPI_AWARENESS_CONTEXT(WINAPI*)();
+    using EqualFn = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT);
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) return false;
+    auto getCtx = reinterpret_cast<GetCtxFn>(
+        reinterpret_cast<void*>(GetProcAddress(user32, "GetThreadDpiAwarenessContext")));
+    auto equal = reinterpret_cast<EqualFn>(
+        reinterpret_cast<void*>(GetProcAddress(user32, "AreDpiAwarenessContextsEqual")));
+    if (!getCtx || !equal) return false;  // Win10 1607 以前：不满足要求
+    return equal(getCtx(), DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) != FALSE;
+}
+
 unsigned dpiForWindow(std::uint64_t hwnd) {
     using GetDpiFn = UINT(WINAPI*)(HWND);
     HMODULE user32 = GetModuleHandleW(L"user32.dll");

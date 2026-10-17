@@ -153,6 +153,14 @@ bool Win32WindowProvider::sameWindow(std::uint64_t handle) {
 
 bool Win32WindowProvider::isWindowValid(std::uint64_t handle) { return sameWindow(handle); }
 
+bool Win32WindowProvider::isForeground(std::uint64_t handle) {
+    if (!sameWindow(handle)) return false;
+    HWND h = toHwnd(handle);
+    HWND fg = GetForegroundWindow();
+    // 只认窗口自身或其子窗口。目标拥有的对话框在前台时，键盘输入会进对话框，因此不算"目标在前台"。
+    return fg != nullptr && (fg == h || GetAncestor(fg, GA_ROOT) == h);
+}
+
 Status Win32WindowProvider::activateWindow(std::uint64_t handle) {
     if (!sameWindow(handle)) {
         return Status::failure(ErrCode::WindowNotFound, "window is gone or its handle was reused");

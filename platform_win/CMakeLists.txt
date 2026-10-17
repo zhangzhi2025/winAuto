@@ -1,10 +1,12 @@
 # Windows 适配器：只做薄封装，判断逻辑都在 core（已测试）。
 # 阶段 1：窗口枚举/激活/提权检测、DPI、全局停止热键。
-# 阶段 2 将加入 SendInput，阶段 3 加入 UIA。
+# 阶段 2：SendInput 输入、窗口坐标定位。阶段 3 加入 UIA。
 add_library(winauto_platform STATIC
     DpiHelper.cpp
     Win32WindowProvider.cpp
     Win32StopHotkey.cpp
+    Win32InputController.cpp
+    Win32PointLocator.cpp
 )
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(winauto_platform PUBLIC winauto_core)

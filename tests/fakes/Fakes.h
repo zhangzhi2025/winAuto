@@ -38,6 +38,7 @@ struct FakeClock : IClock {
 struct FakeWindowProvider : IWindowProvider {
     std::vector<WindowInfo> windows;
     bool selfElevated = false;
+    bool foreground = true;  // isForeground 的返回值
     int notFoundFirst = 0;  // 前 N 次 findWindow 返回 WindowNotFound（模拟窗口稍后出现）
     Status activateResult = okStatus();
     std::set<std::uint64_t> invalidHandles;
@@ -70,6 +71,7 @@ struct FakeWindowProvider : IWindowProvider {
         return activateResult;
     }
     bool isWindowValid(std::uint64_t handle) override { return invalidHandles.count(handle) == 0; }
+    bool isForeground(std::uint64_t) override { return foreground; }
     bool isSelfElevated() override { return selfElevated; }
 };
 
@@ -104,7 +106,9 @@ struct FakeInputController : IInputController {
         actions.push_back(a);
         return hook ? hook(a) : okStatus();
     }
-    Status clickPoint(Point p) override {
+    std::uint64_t lastClickWindow = 0;
+    Status clickPoint(Point p, std::uint64_t windowHandle) override {
+        lastClickWindow = windowHandle;
         return record("click:" + std::to_string(p.x) + "," + std::to_string(p.y));
     }
     Status invoke(const ElementRef& e) override { return record("invoke:" + e.name); }

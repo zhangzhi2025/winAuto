@@ -1,6 +1,9 @@
 #include "UiaSession.h"
 
 #include <windows.h>
+// WIN32_LEAN_AND_MEAN 会让 windows.h 不再包含 COM 基础头；UIAutomationCore.h 依赖其中的 `interface` 宏、BSTR、VARIANT
+#include <objbase.h>
+#include <oleauto.h>
 #include <UIAutomation.h>
 #include <wrl/client.h>
 

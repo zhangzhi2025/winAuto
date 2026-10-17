@@ -44,6 +44,7 @@ struct ElementRef {
     std::uint64_t nativeHandle = 0;  // 平台侧不透明句柄；runtimeId 会失效，不能当引用
     bool supportsInvoke = false;
     bool supportsValue = false;
+    bool enabled = true;  // IsEnabled；禁用的控件不能点击或写入
 };
 
 class IElementLocator {

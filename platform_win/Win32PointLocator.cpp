@@ -43,7 +43,7 @@ Result<ElementRef> Win32PointLocator::locate(std::uint64_t windowHandle, const L
     }
 
     if (std::holds_alternative<UiaLocator>(locator)) {
-        return R::failure(ErrCode::Unsupported, "UI Automation locator is not available yet (stage 3)");
+        return R::failure(ErrCode::Unsupported, "UI Automation locator needs Win32UiaLocator");
     }
     return R::failure(ErrCode::Unsupported, "image locator is not available yet (stage 5)");
 }

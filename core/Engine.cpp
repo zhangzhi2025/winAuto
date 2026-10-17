@@ -146,17 +146,26 @@ struct WorkflowEngine::Run {
     }
 
     // 轮询直到找到或超时。timeoutCode：超时时返回的错误码。
+    // requireEnabled：找到但被禁用的控件视为"还没准备好"，继续轮询（按钮常在表单填完后才启用）；
+    // 超时后给出"found but disabled"的明确原因，而不是笼统的 not found。
     Result<ElementRef> locatePolling(std::uint64_t handle, const Locator& loc, int timeoutMs,
-                                     ErrCode timeoutCode) {
+                                     ErrCode timeoutCode, bool requireEnabled = false) {
         const std::int64_t start = deps.clock->nowMs();
+        bool sawDisabled = false;
         for (;;) {
             if (token.isCancelled()) return Result<ElementRef>::failure(ErrCode::Cancelled);
             Result<ElementRef> r = locateOnce(handle, loc);
+            if (r.ok() && requireEnabled && !r.value.enabled) {
+                sawDisabled = true;
+                r = Result<ElementRef>::failure(ErrCode::ElementNotFound, "element is disabled");
+            }
             if (r.ok() || r.code != ErrCode::ElementNotFound) return r;
             const std::int64_t remaining = timeoutMs - (deps.clock->nowMs() - start);
             if (remaining <= 0) {
                 return Result<ElementRef>::failure(
-                    timeoutCode, "element not found within " + std::to_string(timeoutMs) + " ms");
+                    timeoutCode, std::string(sawDisabled ? "element found but still disabled after "
+                                                         : "element not found within ") +
+                                     std::to_string(timeoutMs) + " ms");
             }
             if (!deps.clock->sleepFor(static_cast<int>(std::min<std::int64_t>(kPollIntervalMs, remaining)),
                                       token)) {
@@ -181,7 +190,7 @@ struct WorkflowEngine::Run {
 
             case StepType::Click: {
                 Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
-                                                     ErrCode::ElementNotFound);
+                                                     ErrCode::ElementNotFound, true);
                 if (!r.ok()) return failAs<Unit>(r);
                 if (s.clickMode == ClickMode::Auto && r.value.supportsInvoke) {
                     return deps.input->invoke(r.value);
@@ -191,7 +200,7 @@ struct WorkflowEngine::Run {
 
             case StepType::SetValue: {
                 Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
-                                                     ErrCode::ElementNotFound);
+                                                     ErrCode::ElementNotFound, true);
                 if (!r.ok()) return failAs<Unit>(r);
                 if (!r.value.supportsValue) {
                     return Status::failure(ErrCode::Unsupported,

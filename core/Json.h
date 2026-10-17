@@ -14,4 +14,7 @@ Result<Workflow> readWorkflow(const std::string& jsonText);
 // 输出带缩进的 UTF-8 JSON；字段顺序固定，便于版本管理时对比。
 std::string writeWorkflow(const Workflow& wf, int indent = 2);
 
+// 把单个定位器输出为 JSON 片段（用于 pick 命令和以后的流程编辑器）；可直接粘贴进流程的 locator 字段。
+std::string locatorToJson(const Locator& locator, int indent = 2);
+
 }  // namespace wa

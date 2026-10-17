@@ -26,13 +26,15 @@
 
 #include "DpiHelper.h"
 #include "Win32InputController.h"
-#include "Win32PointLocator.h"
+#include "Win32UiaLocator.h"
+#include "UiaSession.h"
 #include "Win32StopHotkey.h"
 #include "Win32WindowProvider.h"
 #include "core/Clock.h"
 #include "core/Engine.h"
 #include "core/StopHotkey.h"
 #include "core/Summary.h"
+#include "core/UiaMatch.h"
 #include "core/WindowMatcher.h"
 #endif
 
@@ -68,6 +70,8 @@ int usage() {
                  "  winauto-cli windows\n"
                  "  winauto-cli find <process> [titleContains]\n"
                  "  winauto-cli activate <process> [titleContains]\n"
+                 "  winauto-cli inspect <process> [titleContains] [--max N]   dump the UI Automation tree\n"
+                 "  winauto-cli pick <process> [titleContains] [--delay S]    show the control under the cursor\n"
                  "  winauto-cli stop-hotkey-test [hotkey]\n"
                  "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10]\n"
 #endif
@@ -159,6 +163,114 @@ int cmdFind(const std::vector<std::string>& args, bool activate) {
         return 1;
     }
     std::cout << "activated\n";
+    return 0;
+}
+
+// 解析 "--name value" 形式的整数选项，并把它和值从参数表里去掉
+bool takeIntOption(std::vector<std::string>& args, const std::string& name, int& value) {
+    for (size_t i = 0; i + 1 < args.size(); ++i) {
+        if (args[i] != name) continue;
+        try {
+            value = std::stoi(args[i + 1]);
+        } catch (...) {
+            std::cerr << name << " needs a number\n";
+            return false;
+        }
+        args.erase(args.begin() + static_cast<long>(i), args.begin() + static_cast<long>(i) + 2);
+        return true;
+    }
+    return true;
+}
+
+// 找到目标窗口；提权窗口一律拒绝（UIA 读不到，输入也会被 UIPI 丢弃）
+bool findTarget(const std::vector<std::string>& args, wa::platform::Win32WindowProvider& provider,
+                wa::WindowInfo& out) {
+    auto r = provider.findWindow(specFromArgs(args));
+    if (!r.ok()) {
+        std::cerr << wa::errName(r.code) << ": " << r.detail << "\n";
+        return false;
+    }
+    if (r.value.elevated && !provider.isSelfElevated()) {
+        std::cerr << wa::errName(wa::ErrCode::WindowElevated) << ": " << wa::errText(wa::ErrCode::WindowElevated) << "\n";
+        return false;
+    }
+    out = r.value;
+    return true;
+}
+
+int cmdInspect(std::vector<std::string> args) {
+    int maxNodes = 5000;
+    if (!takeIntOption(args, "--max", maxNodes) || maxNodes < 1) return usage();
+    if (args.size() < 3) return usage();
+    wa::platform::Win32WindowProvider provider;
+    wa::WindowInfo target;
+    if (!findTarget(args, provider, target)) return 1;
+
+    wa::platform::UiaSession session;
+    if (!session.available()) {
+        std::cerr << "UI Automation unavailable: " << session.initError() << "\n";
+        return 1;
+    }
+    wa::CancelToken token;
+    auto snap = session.snapshot(target.handle, token, maxNodes);
+    if (!snap.ok()) {
+        std::cerr << wa::errName(snap.code) << ": " << snap.detail << "\n";
+        return 1;
+    }
+    std::cout << wa::dumpSnapshot(snap.value, 2000);
+    std::cout << snap.value.nodes.size() << " elements\n";
+    if (snap.value.nodes.size() <= 1) {
+        std::cout << "this window exposes almost no UI Automation elements; use window_point locators for it\n";
+    }
+    return 0;
+}
+
+int cmdPick(std::vector<std::string> args) {
+    int delay = 5;
+    if (!takeIntOption(args, "--delay", delay) || delay < 0 || delay > 60) return usage();
+    if (args.size() < 3) return usage();
+    wa::platform::Win32WindowProvider provider;
+    wa::WindowInfo target;
+    if (!findTarget(args, provider, target)) return 1;
+
+    wa::platform::UiaSession session;
+    if (!session.available()) {
+        std::cerr << "UI Automation unavailable: " << session.initError() << "\n";
+        return 1;
+    }
+    std::cout << "把鼠标移到目标控件上（不要点击），" << delay << " 秒后取样...\n";
+    for (int i = delay; i > 0; --i) {
+        std::cout << "  " << i << "\r" << std::flush;
+        Sleep(1000);
+    }
+    POINT cursor{};
+    if (!GetCursorPos(&cursor)) {
+        std::cerr << "GetCursorPos failed\n";
+        return 1;
+    }
+    wa::CancelToken token;
+    auto snap = session.snapshot(target.handle, token);
+    if (!snap.ok()) {
+        std::cerr << wa::errName(snap.code) << ": " << snap.detail << "\n";
+        return 1;
+    }
+    auto idx = session.indexAtPoint(wa::Point{static_cast<int>(cursor.x), static_cast<int>(cursor.y)});
+    if (!idx.ok()) {
+        std::cerr << wa::errName(idx.code) << ": " << idx.detail << "\n";
+        return 1;
+    }
+    const wa::UiaNode& n = snap.value.nodes[idx.value];
+    std::cout << "鼠标下的控件：[" << n.controlType << "] id=\"" << n.automationId << "\" name=\"" << n.name
+              << "\"" << (n.enabled ? "" : " (disabled)") << (n.supportsInvoke ? " invoke" : "")
+              << (n.supportsValue ? " value" : "") << "\n";
+    auto sug = wa::suggestLocator(snap.value, idx.value);
+    if (!sug.ok()) {
+        std::cout << "没有唯一的 UIA 定位条件：" << sug.detail << "\n";
+        return 1;
+    }
+    for (const auto& w : sug.value.warnings) std::cout << "注意：" << w << "\n";
+    std::cout << "建议的 locator（可直接粘贴进流程）：\n"
+              << wa::locatorToJson(wa::Locator{sug.value.locator}) << "\n";
     return 0;
 }
 
@@ -298,8 +410,9 @@ int cmdRun(const std::vector<std::string>& args) {
 
     // 3) 执行
     wa::platform::Win32WindowProvider windows;
-    wa::platform::Win32PointLocator locator;
-    wa::platform::Win32InputController input;
+    wa::platform::UiaSession uia;  // 不可用时 uia 定位返回 Unsupported，fallback 会跳过
+    wa::platform::Win32UiaLocator locator(uia);
+    wa::platform::Win32InputController input(&uia);
     wa::SteadyClock clock;
 
     wa::EngineDeps deps;
@@ -365,6 +478,8 @@ int main(int argc, char** argv) {
     if (cmd == "windows") return cmdWindows();
     if (cmd == "find") return cmdFind(args, /*activate=*/false);
     if (cmd == "activate") return cmdFind(args, /*activate=*/true);
+    if (cmd == "inspect") return cmdInspect(args);
+    if (cmd == "pick") return cmdPick(args);
     if (cmd == "stop-hotkey-test") return cmdStopHotkeyTest(args);
     if (cmd == "run") return cmdRun(args);
 #else

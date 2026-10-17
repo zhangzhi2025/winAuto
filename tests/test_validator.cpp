@@ -299,3 +299,23 @@ TEST(key_helpers) {
     CHECK(isModifierKey("win"));
     CHECK(!isModifierKey("s"));
 }
+
+TEST(unknown_control_type_is_rejected_with_hint) {
+    Step s = step("S2", StepType::Click);
+    UiaLocator u;
+    u.automationId = "x";
+    u.controlType = "Buton";
+    s.locator = Locator{u};
+    auto r = check(withStep(s));
+    CHECK(!r.ok());
+    CHECK(r.find("unknown_control_type", "steps[1].locator.controlType") != nullptr);
+}
+
+TEST(control_type_is_case_insensitive_in_validation) {
+    Step s = step("S2", StepType::Click);
+    UiaLocator u;
+    u.automationId = "x";
+    u.controlType = "button";
+    s.locator = Locator{u};
+    CHECK(check(withStep(s)).ok());
+}

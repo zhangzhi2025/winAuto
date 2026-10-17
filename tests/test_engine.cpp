@@ -553,3 +553,45 @@ TEST(non_sensitive_text_is_not_redacted_from_platform_errors) {
     RunReport r = env.run(flow({typeStep("S1", "hello", /*sensitive=*/false)}));
     CHECK_CONTAINS(r.detail, "hello");
 }
+
+TEST(click_waits_until_disabled_button_becomes_enabled) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int idx) {
+        ElementRef e = FakeElementLocator::element("b", true);
+        e.enabled = idx >= 2;  // 前两次轮询仍是禁用
+        return Result<ElementRef>::success(e);
+    };
+    RunReport r = env.run(flow({clickStep("S2")}));
+    CHECK(r.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.input.actions.size(), static_cast<size_t>(1));
+    CHECK_EQ(env.locator.calls.size(), static_cast<size_t>(3));
+}
+
+TEST(click_on_permanently_disabled_element_fails_with_clear_reason) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) {
+        ElementRef e = FakeElementLocator::element("b", true);
+        e.enabled = false;
+        return Result<ElementRef>::success(e);
+    };
+    Step c = clickStep("S2");
+    c.timeoutMs = 400;
+    RunReport r = env.run(flow({c}));
+    CHECK(r.state == ExecutionState::Failed);
+    CHECK(r.code == ErrCode::ElementNotFound);
+    CHECK(env.input.actions.empty());  // 绝不点击禁用控件
+    CHECK_CONTAINS(r.detail, "disabled");
+}
+
+TEST(wait_for_element_does_not_require_enabled) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) {
+        ElementRef e = FakeElementLocator::element("b", true);
+        e.enabled = false;
+        return Result<ElementRef>::success(e);
+    };
+    Step w = step("S1", StepType::WaitForElement);
+    w.locator = Locator{uia("x", "Button")};
+    RunReport r = env.run(flow({w}));
+    CHECK(r.state == ExecutionState::Succeeded);
+}

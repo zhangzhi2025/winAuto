@@ -1,5 +1,7 @@
 #include "core/Validator.h"
 
+#include "core/ControlType.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -44,6 +46,10 @@ public:
             if (u->automationId.empty() && u->name.empty() && u->controlType.empty()) {
                 error(path, "uia_no_condition",
                       "uia locator needs at least one of automationId, name, controlType");
+            } else if (!u->controlType.empty() && canonicalControlType(u->controlType).empty()) {
+                error(sub(path, "controlType"), "unknown_control_type",
+                      "unknown controlType \"" + u->controlType + "\"; valid values are UI Automation control "
+                      "type names such as Button, Edit, CheckBox, ComboBox, MenuItem");
             } else if (u->automationId.empty()) {
                 warn(path, "uia_no_automation_id",
                      "locating without automationId is fragile (names change with system language "

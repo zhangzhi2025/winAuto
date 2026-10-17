@@ -10,7 +10,7 @@
 | 0 工程基础 | ✅ 完成 | core 层全部落地并有测试；platform_win / ui 为占位 |
 | 1 窗口管理 + 全局停止热键 | 🟡 代码完成，待 Windows 验证 | 判断逻辑已测试；Win32 层未编译过，见 `tests/manual/stage1-windows-checklist.md`。窗口选择器 UI 并入阶段 4 |
 | 2 动作引擎 + `winauto-cli run` | 🟡 代码完成，待 Windows 验证 | 坐标点击、文本、组合键、信任确认、停止热键；清单见 `tests/manual/stage2-windows-checklist.md` |
-| 3 UIA 定位 | 未开始 | |
+| 3 UIA 定位 | 🟡 代码完成，待 Windows 验证 | 控件树快照 + core 匹配/诊断/定位建议；`inspect` / `pick` 命令；Invoke / Value；清单见 `tests/manual/stage3-windows-checklist.md` |
 | 4 流程编辑器 UI | 未开始 | |
 | 5 图像识别 | 未开始（第二里程碑） | |
 
@@ -75,9 +75,10 @@ core/          纯标准 C++17，不依赖 Qt / Win32（CTest 的 core_purity �
   StopHotkey   IStopHotkey 接口 + 热键到取消令牌的守卫
   InputPlan    文本/组合键 -> 按键序列、鼠标坐标归一化、窗口点解析（纯逻辑）
   Summary      运行前的信任摘要
+  UiaSnapshot  UI 树快照（纯数据）；UiaMatch 在快照上匹配、判唯一、失败诊断、生成定位建议；ControlType 控件类型表
   CancelToken  线程安全取消令牌，等待可被立即打断
   Logger       执行日志与敏感信息脱敏
-platform_win/  Windows 适配器：窗口枚举/激活/提权检测、DPI、全局热键线程（薄封装，逻辑在 core）
+platform_win/  Windows 适配器：窗口枚举/激活/提权检测、DPI、全局热键线程、SendInput、UI Automation（薄封装，逻辑在 core）
 cli/           winauto-cli
 ui/            Qt 5.15 Widgets（目前仅占位窗口）
 schemas/       workflow.schema.json（draft-07，仅作文档和编辑器提示）
@@ -131,16 +132,30 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 向更高权限窗口发送输入会被系统**静默丢弃**且不报错（UIPI），所以引擎在第一步前的提权预检是必需的，不能绕过。
 - `fallback` 会跳过"当前版本不支持"的策略（如阶段 2 的 `uia`），只有全部不支持时才报 `Unsupported`；歧义仍然直接失败。
 
+## UI Automation 约定（阶段 3）
+- 平台层只把目标窗口的控件树读成快照（控件视图，缓存请求，一次读取），匹配规则全在 core：
+  `automationId` 精确且区分大小写；`controlType` 忽略大小写；`name` 按 `match`（exact / contains）。
+- **多个候选默认报 `ElementAmbiguous`，并列出候选，绝不取第一个**；只有显式 `ambiguity: first` 才取第一个。
+- 屏幕外或零尺寸的控件不参与匹配（点不到）。
+- `click` / `set_value` 找到**被禁用**的控件时继续轮询到超时（按钮常在表单填完后才启用），
+  超时报 `element found but still disabled`，绝不对禁用控件下手；`wait_for_element` / `assert_element` 不要求启用。
+- 找不到时的错误信息带诊断：automationId 存在但类型不符、名字相近（建议 `match: contains`）、该类型有哪些控件、
+  控件类型拼错、窗口完全没有 UIA 元素（建议改用 window_point）。
+- 未知 `controlType` 在校验阶段就报错（`unknown_control_type`）。
+- 元素引用带代数：重新读取控件树后旧引用失效并报错，不会误操作到别的元素。
+- 命令：`inspect <进程> [标题] [--max N]` 输出缩进的控件树；`pick <进程> [标题] [--delay S]` 倒计时后取鼠标下的控件并输出可直接粘贴的 locator（优先 automationId，其次 name 并警告名称易变，都不唯一则建议 window_point）。
+- 不可用时（COM 初始化失败等）uia 策略返回 `Unsupported`，fallback 链会跳过它。
+
 ## 已知限制
 
-0. 弹出菜单、下拉框、对话框是独立顶层窗口，坐标点击会因"不在目标窗口上"被拒绝，需等 UIA（阶段 3）。
+0. 弹出菜单、下拉框是独立顶层窗口：UIA 定位只读取目标窗口自己的控件树，读不到它们；坐标点击也会因"不在目标窗口上"被拒绝。需要时可把弹出窗口配成另一个窗口别名（用 titleContains 区分）。
    剪贴板输入未实现（`Unsupported`）。一次性发送的长文本无法中途取消。
 1. **重试会重新执行动作本身。** 对 `input_text` 配置 `expect` + `retry` 时，若校验失败，文本会被再输入一次。
    对有副作用的动作，请谨慎配置重试。
 2. **步骤超时无法抢占阻塞中的平台调用。** 引擎在等待和轮询处响应取消与超时；一次卡死的 UIA / Win32 调用需要平台层自己设置超时（阶段 1/3 处理）。
 3. `image` 定位器能被读取和校验，但会给出 `unsupported_in_mvp` 警告，运行时不可用（阶段 5）。
 4. `screenshotOnFailure` 字段已进入模型，截图本身尚未实现。
-5. **阶段 2 的 `platform_win/`（输入、点位定位）、CLI 的 `run` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
+5. **阶段 2–3 的 `platform_win/`（输入、点位定位、UI Automation）、CLI 的 `run` / `inspect` / `pick` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
    它们只用手写的 Win32 桩做过语法检查，签名是否与真实 SDK 一致尚未验证。
    core、cli（非 Windows 分支）、测试已在 GCC 13 / clang 下通过，含 ASan / UBSan / TSan，`-Werror` 零警告。
 6. 示例里的控件 `automationId` 只用于演示，必须用实际窗口探测确认；不同版本的记事本控件树不同。
@@ -148,7 +163,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 ## 测试
 
 ```
-test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan
+test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan / test_uia_match
 core_purity            core/ 不得引用 Win32 / COM / Qt 头文件
 cli_validate_examples  CLI 冒烟
 schema_examples        Schema 校验示例（需要 Python + jsonschema，没有则自动跳过）

@@ -440,6 +440,8 @@ Result<Workflow> readWorkflow(const std::string& jsonText) {
     return Result<Workflow>::success(std::move(wf));
 }
 
+std::string locatorToJson(const Locator& locator, int indent) { return writeLocator(locator).dump(indent); }
+
 std::string writeWorkflow(const Workflow& wf, int indent) {
     ojson j = ojson::object();
     j["schemaVersion"] = wf.schemaVersion;

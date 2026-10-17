@@ -89,12 +89,14 @@ Status Win32InputController::clickPoint(Point p, std::uint64_t windowHandle) {
     return sendAll(click);
 }
 
-Status Win32InputController::invoke(const ElementRef&) {
-    return Status::failure(ErrCode::Unsupported, "InvokePattern needs UI Automation (stage 3)");
+Status Win32InputController::invoke(const ElementRef& element) {
+    if (!uia_) return Status::failure(ErrCode::Unsupported, "InvokePattern needs a UI Automation session");
+    return uia_->invoke(element.nativeHandle);
 }
 
-Status Win32InputController::setValue(const ElementRef&, const std::string&) {
-    return Status::failure(ErrCode::Unsupported, "ValuePattern needs UI Automation (stage 3)");
+Status Win32InputController::setValue(const ElementRef& element, const std::string& text) {
+    if (!uia_) return Status::failure(ErrCode::Unsupported, "ValuePattern needs a UI Automation session");
+    return uia_->setValue(element.nativeHandle, text);
 }
 
 Status Win32InputController::typeText(const std::string& text, InputMethod method) {

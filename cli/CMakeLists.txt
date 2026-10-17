@@ -1,0 +1,6 @@
+add_executable(winauto-cli main.cpp)
+target_link_libraries(winauto-cli PRIVATE winauto_core)
+if(WIN32)
+    target_link_libraries(winauto-cli PRIVATE winauto_platform shell32)
+    target_compile_definitions(winauto-cli PRIVATE WINAUTO_HAVE_PLATFORM)
+endif()

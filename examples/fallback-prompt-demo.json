@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-DEMO-FALLBACK",
+  "name": "回退与运行时询问示例",
+  "windows": {
+    "app": {
+      "processName": "demoapp.exe",
+      "titleContains": "登录",
+      "timeoutMs": 8000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": false,
+    "retry": { "times": 0, "intervalMs": 500 }
+  },
+  "steps": [
+    { "id": "D1", "type": "activate_window", "window": "app" },
+    {
+      "id": "D2",
+      "type": "wait_for_element",
+      "window": "app",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "passwordBox",
+        "controlType": "Edit",
+        "match": "exact",
+        "ambiguity": "error"
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "id": "D3",
+      "type": "set_value",
+      "window": "app",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "passwordBox",
+        "controlType": "Edit",
+        "match": "exact",
+        "ambiguity": "error"
+      },
+      "textFrom": "prompt",
+      "sensitive": true
+    },
+    {
+      "id": "D4",
+      "type": "click",
+      "window": "app",
+      "locator": {
+        "strategy": "fallback",
+        "locators": [
+          {
+            "strategy": "uia",
+            "automationId": "loginButton",
+            "controlType": "Button",
+            "match": "exact",
+            "ambiguity": "error"
+          },
+          { "strategy": "window_point", "x": 0.8, "y": 0.9, "anchor": "ratio" }
+        ]
+      },
+      "mode": "auto",
+      "retry": { "times": 2, "intervalMs": 500 }
+    }
+  ]
+}

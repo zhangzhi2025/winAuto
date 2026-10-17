@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-EMPTY",
+  "name": "空流程",
+  "windows": { "main": { "processName": "notepad.exe" } },
+  "steps": []
+}

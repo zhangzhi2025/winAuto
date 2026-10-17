@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-NOTEPAD-COORD-001",
+  "name": "记事本：坐标点击并输入（阶段 2 演示）",
+  "windows": {
+    "main": {
+      "processName": "notepad.exe",
+      "titleContains": "",
+      "timeoutMs": 5000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": false,
+    "retry": { "times": 0, "intervalMs": 500 }
+  },
+  "steps": [
+    { "id": "A1", "type": "activate_window", "window": "main" },
+    { "id": "A2", "type": "wait", "durationMs": 300 },
+    {
+      "id": "A3",
+      "type": "click",
+      "window": "main",
+      "locator": { "strategy": "window_point", "x": 0.5, "y": 0.5, "anchor": "ratio" },
+      "mode": "point"
+    },
+    {
+      "id": "A4",
+      "type": "input_text",
+      "window": "main",
+      "text": "Hello 你好 😀\n第二行\t缩进",
+      "method": "unicode",
+      "sensitive": false
+    },
+    { "id": "A5", "type": "hotkey", "window": "main", "keys": ["CTRL", "A"] }
+  ]
+}

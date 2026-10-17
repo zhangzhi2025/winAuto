@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-NOTEPAD-001",
+  "name": "记事本输入文本",
+  "windows": {
+    "main": {
+      "processName": "notepad.exe",
+      "titleContains": "",
+      "timeoutMs": 5000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": false,
+    "retry": { "times": 0, "intervalMs": 500 }
+  },
+  "steps": [
+    { "id": "S1", "type": "activate_window", "window": "main" },
+    {
+      "id": "S2",
+      "type": "click",
+      "window": "main",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "15",
+        "controlType": "Edit",
+        "match": "exact",
+        "ambiguity": "error"
+      },
+      "mode": "auto"
+    },
+    {
+      "id": "S3",
+      "type": "input_text",
+      "window": "main",
+      "text": "Hello Windows Automation",
+      "method": "unicode",
+      "sensitive": false,
+      "expect": {
+        "type": "element_exists",
+        "locator": {
+          "strategy": "uia",
+          "name": "Hello Windows Automation",
+          "match": "contains",
+          "ambiguity": "error"
+        }
+      },
+      "retry": { "times": 1, "intervalMs": 500 }
+    },
+    { "id": "S4", "type": "hotkey", "window": "main", "keys": ["CTRL", "S"] }
+  ]
+}

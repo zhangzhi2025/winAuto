@@ -12,14 +12,21 @@
 
 #ifdef WINAUTO_HAVE_PLATFORM
 #include "UiaSession.h"
+#include "Win32ImageLocator.h"
 #include "Win32InputController.h"
 #include "Win32StopHotkey.h"
 #include "Win32UiaLocator.h"
 #include "Win32WindowProvider.h"
 #endif
 
-RunWorker::RunWorker(wa::Workflow wf, wa::RunOptions options, bool startPaused, RunController* promptOwner)
-    : wf_(std::move(wf)), options_(options), startPaused_(startPaused), promptOwner_(promptOwner), gate_(token_) {}
+RunWorker::RunWorker(wa::Workflow wf, wa::RunOptions options, bool startPaused, RunController* promptOwner,
+                     std::string baseDir)
+    : wf_(std::move(wf)),
+      options_(options),
+      startPaused_(startPaused),
+      promptOwner_(promptOwner),
+      baseDir_(std::move(baseDir)),
+      gate_(token_) {}
 
 void RunWorker::stop() {
     gate_.stop();
@@ -48,7 +55,8 @@ void RunWorker::run() {
     // COM 对象必须在使用它们的线程里创建
     wa::platform::Win32WindowProvider windows;
     wa::platform::UiaSession uia;
-    wa::platform::Win32UiaLocator locator(uia);
+    wa::platform::Win32ImageLocator images(baseDir_);
+    wa::platform::Win32UiaLocator locator(uia, &images);
     wa::platform::Win32InputController input(&uia);
     wa::SteadyClock clock;
 
@@ -98,10 +106,11 @@ RunController::~RunController() {
     }
 }
 
-bool RunController::start(const wa::Workflow& wf, const wa::RunOptions& options, bool startPaused) {
+bool RunController::start(const wa::Workflow& wf, const wa::RunOptions& options, bool startPaused,
+                          const std::string& baseDir) {
     if (worker_) return false;
     thread_ = new QThread(this);
-    worker_ = new RunWorker(wf, options, startPaused, this);
+    worker_ = new RunWorker(wf, options, startPaused, this, baseDir);
     worker_->moveToThread(thread_);
     connect(thread_, &QThread::started, worker_, &RunWorker::run);
     connect(worker_, &RunWorker::log, this, &RunController::log);

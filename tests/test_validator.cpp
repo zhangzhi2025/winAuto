@@ -237,7 +237,7 @@ TEST(image_locator_rules) {
     s.locator = Locator{im};
     auto r = check(withStep(s));
     CHECK(r.ok());
-    CHECK(r.has("unsupported_in_mvp"));
+    CHECK(!r.has("unsupported_in_mvp"));  // 阶段 5 起图像定位可用
 
     for (const char* bad : {"../secret.png", "/etc/passwd", "C:\\x.png", "a/../../b.png", "..\\x.png"}) {
         im.templatePath = bad;
@@ -318,4 +318,26 @@ TEST(control_type_is_case_insensitive_in_validation) {
     u.controlType = "button";
     s.locator = Locator{u};
     CHECK(check(withStep(s)).ok());
+}
+
+TEST(image_locator_template_extension_and_options) {
+    Step s = step("C", StepType::Click);
+    ImageLocator im;
+    im.templatePath = "assets/send.jpg";
+    s.locator = Locator{im};
+    CHECK(check(withStep(s)).has("bad_template_extension"));
+    im.templatePath = "assets/noext";
+    s.locator = Locator{im};
+    CHECK(check(withStep(s)).has("bad_template_extension"));
+    im.templatePath = "assets/Send.PNG";  // 扩展名忽略大小写
+    s.locator = Locator{im};
+    CHECK(check(withStep(s)).ok());
+
+    im.ambiguity = Ambiguity::First;
+    im.minConfidence = 0.5;
+    s.locator = Locator{im};
+    auto r = check(withStep(s));
+    CHECK(r.ok());
+    CHECK(r.has("ambiguity_first"));
+    CHECK(r.has("low_confidence"));
 }

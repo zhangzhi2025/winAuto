@@ -104,6 +104,7 @@
         "strategy": { "const": "image" },
         "template": { "type": "string", "minLength": 1 },
         "minConfidence": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "ambiguity": { "enum": ["error", "first"] },
         "searchRegion": {
           "type": "object",
           "required": ["x", "y", "width", "height"],

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-DEMO-IMAGE",
+  "name": "图像定位示例（UIA 优先，失败后用图像，再失败用坐标）",
+  "windows": {
+    "main": {
+      "processName": "notepad.exe",
+      "titleContains": "",
+      "timeoutMs": 5000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": false,
+    "retry": { "times": 0, "intervalMs": 500 }
+  },
+  "steps": [
+    { "id": "I1", "type": "activate_window", "window": "main" },
+    {
+      "id": "I2",
+      "type": "click",
+      "window": "main",
+      "locator": {
+        "strategy": "fallback",
+        "locators": [
+          { "strategy": "uia", "controlType": "Edit", "match": "exact", "ambiguity": "error" },
+          {
+            "strategy": "image",
+            "template": "assets/notepad-text-area.png",
+            "minConfidence": 0.9,
+            "ambiguity": "error",
+            "searchRegion": { "x": 0, "y": 0, "width": 600, "height": 400 }
+          },
+          { "strategy": "window_point", "x": 0.5, "y": 0.5, "anchor": "ratio" }
+        ]
+      },
+      "mode": "point"
+    },
+    {
+      "id": "I3",
+      "type": "input_text",
+      "window": "main",
+      "text": "hello from image locator"
+    }
+  ]
+}

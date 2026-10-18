@@ -15,6 +15,9 @@ add_library(winauto_core STATIC
     Summary.cpp
     ControlType.cpp
     UiaMatch.cpp
+    GrayImage.cpp
+    TemplateMatch.cpp
+    PathSafety.cpp
     WorkflowEditor.cpp
     DebugGate.cpp
 )

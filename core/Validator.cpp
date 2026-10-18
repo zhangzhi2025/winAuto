@@ -90,8 +90,14 @@ public:
                 error(sub(path, "searchRegion"), "out_of_range",
                       "searchRegion width and height must be positive");
             }
-            warn(path, "unsupported_in_mvp",
-                 "image locator is not available in the first milestone and will fail at run time");
+            if (im->ambiguity == Ambiguity::First) {
+                warn(path, "ambiguity_first",
+                     "ambiguity=first picks the top-most match when the image appears several times");
+            }
+            if (im->minConfidence < 0.7) {
+                warn(sub(path, "minConfidence"), "low_confidence",
+                     "a minConfidence below 0.7 can match the wrong area; prefer a distinctive template instead");
+            }
         }
     }
 
@@ -112,6 +118,18 @@ public:
         if (abs || parent) {
             error(path, "bad_template_path",
                   "template must be a relative path inside the workflow directory");
+            return;
+        }
+        // 只接受常见的无损/位图格式：有损压缩（jpg）会让同一个图标每次截图的像素不一致
+        std::string ext;
+        const size_t dot = p.find_last_of('.');
+        if (dot != std::string::npos) {
+            for (size_t i = dot + 1; i < p.size(); ++i) {
+                ext += static_cast<char>(std::tolower(static_cast<unsigned char>(p[i])));
+            }
+        }
+        if (ext != "png" && ext != "bmp") {
+            error(path, "bad_template_extension", "template must be a .png or .bmp file (lossless)");
         }
     }
 

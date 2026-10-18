@@ -7,6 +7,10 @@ namespace wa::platform {
 Result<ElementRef> Win32UiaLocator::locate(std::uint64_t windowHandle, const LeafLocator& locator,
                                            const CancelToken& token) {
     using R = Result<ElementRef>;
+    if (const auto* im = std::get_if<ImageLocator>(&locator)) {
+        if (!images_) return R::failure(ErrCode::Unsupported, "image locator is not available in this host");
+        return images_->locate(windowHandle, *im, token);
+    }
     const auto* u = std::get_if<UiaLocator>(&locator);
     if (!u) return points_.locate(windowHandle, locator, token);
 

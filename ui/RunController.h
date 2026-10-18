@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <memory>
+#include <string>
 
 #include "core/CancelToken.h"
 #include "core/DebugGate.h"
@@ -15,7 +16,8 @@ class RunController;
 class RunWorker : public QObject {
     Q_OBJECT
 public:
-    RunWorker(wa::Workflow wf, wa::RunOptions options, bool startPaused, RunController* promptOwner);
+    RunWorker(wa::Workflow wf, wa::RunOptions options, bool startPaused, RunController* promptOwner,
+              std::string baseDir);
 
     // 以下方法可从任意线程调用
     void pause() { gate_.pause(); }
@@ -39,6 +41,7 @@ private:
     wa::RunOptions options_;
     bool startPaused_;
     RunController* promptOwner_;
+    std::string baseDir_;  // 流程文件所在目录；图像模板相对它解析，未保存时为空
     wa::CancelToken token_;
     wa::DebugGate gate_;
 };
@@ -52,7 +55,8 @@ public:
     bool running() const { return worker_ != nullptr; }
 
     // 开始运行。startPaused=true 为单步调试。已在运行时返回 false。
-    bool start(const wa::Workflow& wf, const wa::RunOptions& options, bool startPaused);
+    // baseDir：流程文件所在目录（UTF-8），图像模板相对它解析；流程未保存时传空串。
+    bool start(const wa::Workflow& wf, const wa::RunOptions& options, bool startPaused, const std::string& baseDir);
     void pause();
     void resume();
     void step();

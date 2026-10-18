@@ -8,11 +8,11 @@
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | 0 工程基础 | ✅ 完成 | core 层全部落地并有测试；platform_win / ui 为占位 |
-| 1 窗口管理 + 全局停止热键 | 🟡 代码完成，待 Windows 验证 | 判断逻辑已测试；Win32 层未编译过，见 `tests/manual/stage1-windows-checklist.md`。窗口选择器 UI 并入阶段 4 |
-| 2 动作引擎 + `winauto-cli run` | 🟡 代码完成，待 Windows 验证 | 坐标点击、文本、组合键、信任确认、停止热键；清单见 `tests/manual/stage2-windows-checklist.md` |
-| 3 UIA 定位 | 🟡 代码完成，待 Windows 验证 | 控件树快照 + core 匹配/诊断/定位建议；`inspect` / `pick` 命令；Invoke / Value；清单见 `tests/manual/stage3-windows-checklist.md` |
-| 4 流程编辑器 UI | 🟡 代码完成，待 Windows 编译与验证 | 步骤列表/属性面板/窗口选择/控件拾取/单步调试/运行日志；清单见 `tests/manual/stage4-windows-checklist.md` |
-| 5 图像识别 | 未开始（第二里程碑） | |
+| 1 窗口管理 + 全局停止热键 | ✅ 已在 Windows 验证 | 窗口选择器 UI 在阶段 4 |
+| 2 动作引擎 + `winauto-cli run` | ✅ 已在 Windows 验证 | 坐标点击、文本、组合键、信任确认、停止热键 |
+| 3 UIA 定位 | ✅ Windows 编译通过 | 运行时行为按 `tests/manual/stage3-windows-checklist.md` 验证；控件树快照 + core 匹配/诊断/定位建议；`inspect` / `pick` |
+| 4 流程编辑器 UI | ✅ 已在 Windows 验证 | 步骤列表/属性面板/窗口选择/控件拾取/单步调试/运行日志 |
+| 5 图像识别 | 🟡 代码完成，待 Windows 编译与验证 | 灰度 ZNCC 模板匹配（core，已测试）+ GDI 截屏 + WIC 读图；`shot` / `find-image` 命令；清单见 `tests/manual/stage5-windows-checklist.md` |
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
 
@@ -77,6 +77,7 @@ core/          纯标准 C++17，不依赖 Qt / Win32（CTest 的 core_purity �
   Summary      运行前的信任摘要
   WorkflowEditor 编辑器视图模型：增删改移步骤、窗口别名重命名、撤销/重做、校验问题归属到步骤（UI 只转发）
   DebugGate    单步/暂停/继续/跳过/停止的线程安全闸门（引擎每步之前调用）
+  GrayImage / TemplateMatch  灰度图与模板匹配（ZNCC，歧义检测）；PathSafety 模板路径越界检查
   UiaSnapshot  UI 树快照（纯数据）；UiaMatch 在快照上匹配、判唯一、失败诊断、生成定位建议；ControlType 控件类型表
   CancelToken  线程安全取消令牌，等待可被立即打断
   Logger       执行日志与敏感信息脱敏
@@ -159,6 +160,18 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 运行时询问的敏感文本（`textFrom: prompt`）用密码框询问，不落盘。
 - 保存使用原子写入（QSaveFile），不会写一半损坏原文件。
 
+## 图像定位约定（阶段 5）
+- 用法：`"strategy": "image"`，`template`（相对**流程文件所在目录**，只接受 .png / .bmp）、`minConfidence`（默认 0.9）、
+  `searchRegion`（相对目标窗口客户区左上角，像素；缩小范围更快也更不易误匹配）、`ambiguity`（error | first）。
+- 匹配：灰度 ZNCC（对整体亮度/对比度变化不敏感）。**多处达标默认 `ElementAmbiguous`，不猜**；`first` 取最靠上再靠左的一处。
+  纯色（无对比度）的模板直接拒绝；`minConfidence < 0.7` 校验时警告。
+- 命中点必须落在目标窗口自己身上（被别的窗口盖住时视为没找到）；点击仍会再做一次落点检查。
+- 模板路径用规范化后的真实路径再检查一次，符号链接/联接指向目录之外会被拒绝；带透明像素的模板被拒绝；模板缺失是配置错误，
+  不会被 fallback 悄悄跳过。
+- 截屏受限：硬件加速/受保护内容可能截到黑块，此时请改用 uia 或 window_point。主题、缩放、字体变化会让模板失效，需要重新截取。
+- 命令：`shot <进程> [标题] --out <file.png> [--region x,y,w,h]` 截模板；`find-image <进程> [标题] <模板.png> [--min 0.9] [--region x,y,w,h] [--first]` 试匹配并给出得分和窗口内坐标。
+- 性能：模板较大时先在下采样图上搜索（对网格相位各做一份模板再精修），1080p 全窗口搜索 40x40 模板约 0.15 秒（容器内 Release）。
+
 ## 已知限制
 
 0. 弹出菜单、下拉框是独立顶层窗口：UIA 定位只读取目标窗口自己的控件树，读不到它们；坐标点击也会因"不在目标窗口上"被拒绝。需要时可把弹出窗口配成另一个窗口别名（用 titleContains 区分）。
@@ -166,10 +179,9 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 1. **重试会重新执行动作本身。** 对 `input_text` 配置 `expect` + `retry` 时，若校验失败，文本会被再输入一次。
    对有副作用的动作，请谨慎配置重试。
 2. **步骤超时无法抢占阻塞中的平台调用。** 引擎在等待和轮询处响应取消与超时；一次卡死的 UIA / Win32 调用需要平台层自己设置超时（阶段 1/3 处理）。
-3. `image` 定位器能被读取和校验，但会给出 `unsupported_in_mvp` 警告，运行时不可用（阶段 5）。
+3. 图像定位依赖屏幕像素：主题/缩放/字体变化会使模板失效；窗口被遮挡时找不到。UI 里暂时只能在定位器 JSON 中编辑它，截取模板请用 `shot` 命令。
 4. `screenshotOnFailure` 字段已进入模型，截图本身尚未实现。
-5. **阶段 4 的 `ui/` 全部（Qt 5.15）从未被编译过**（容器里没有 Qt）。阶段 2–3 的 `platform_win/`（输入、点位定位、UI Automation）、CLI 的 `run` / `inspect` / `pick` 以及 `ui/` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器；阶段 1 已由你验证通过）。
-   它们只用手写的 Win32 桩做过语法检查，签名是否与真实 SDK 一致尚未验证。
+5. **阶段 5 的 `platform_win/`（截屏、WIC 读图、图像定位）和 CLI 的 `shot` / `find-image` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器），只用手写的 GDI/WIC 桩做过语法检查；阶段 1–4 的 Windows 部分已由你编译/验证。
    core、cli（非 Windows 分支）、测试已在 GCC 13 / clang 下通过，含 ASan / UBSan / TSan，`-Werror` 零警告。
 6. 示例里的控件 `automationId` 只用于演示，必须用实际窗口探测确认；不同版本的记事本控件树不同。
 

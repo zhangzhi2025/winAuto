@@ -205,10 +205,16 @@ private:
             return l;
         }
         if (strategy == "image") {
-            noteUnknown(v, {"strategy", "template", "minConfidence", "searchRegion"}, path);
+            noteUnknown(v, {"strategy", "template", "minConfidence", "searchRegion", "ambiguity"}, path);
             ImageLocator l;
             l.templatePath = str(v, "template", "", path);
             l.minConfidence = number(v, "minConfidence", l.minConfidence, path);
+            if (find(v, "ambiguity")) {
+                std::string a = str(v, "ambiguity", "", path);
+                if (a == "error") l.ambiguity = Ambiguity::Error;
+                else if (a == "first") l.ambiguity = Ambiguity::First;
+                else throw ReadError{childPath(path, "ambiguity"), "must be \"error\" or \"first\""};
+            }
             if (const json* r = find(v, "searchRegion")) {
                 const std::string rp = childPath(path, "searchRegion");
                 requireObject(*r, rp);
@@ -379,6 +385,7 @@ ojson writeLeaf(const LeafLocator& loc) {
     } else if (const auto* im = std::get_if<ImageLocator>(&loc)) {
         j["template"] = im->templatePath;
         j["minConfidence"] = im->minConfidence;
+        j["ambiguity"] = im->ambiguity == Ambiguity::Error ? "error" : "first";
         if (im->searchRegion) {
             ojson r = ojson::object();
             r["x"] = im->searchRegion->x;

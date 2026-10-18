@@ -26,6 +26,9 @@
 
 #include "DpiHelper.h"
 #include "Win32InputController.h"
+#include "ImageFile.h"
+#include "ScreenCapture.h"
+#include "Win32ImageLocator.h"
 #include "Win32UiaLocator.h"
 #include "UiaSession.h"
 #include "Win32StopHotkey.h"
@@ -33,7 +36,9 @@
 #include "core/Clock.h"
 #include "core/Engine.h"
 #include "core/StopHotkey.h"
+#include "core/GrayImage.h"
 #include "core/Summary.h"
+#include "core/TemplateMatch.h"
 #include "core/UiaMatch.h"
 #include "core/WindowMatcher.h"
 #endif
@@ -72,6 +77,9 @@ int usage() {
                  "  winauto-cli activate <process> [titleContains]\n"
                  "  winauto-cli inspect <process> [titleContains] [--max N]   dump the UI Automation tree\n"
                  "  winauto-cli pick <process> [titleContains] [--delay S]    show the control under the cursor\n"
+                 "  winauto-cli shot <process> [titleContains] --out <file.png> [--region x,y,w,h]\n"
+                 "                                                            save a template image (region is relative to the window client area)\n"
+                 "  winauto-cli find-image <process> [titleContains] <template.png> [--min 0.9] [--region x,y,w,h] [--first]\n"
                  "  winauto-cli stop-hotkey-test [hotkey]\n"
                  "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10]\n"
 #endif
@@ -274,6 +282,148 @@ int cmdPick(std::vector<std::string> args) {
     return 0;
 }
 
+bool takeStringOption(std::vector<std::string>& args, const std::string& name, std::string& value) {
+    for (size_t i = 0; i + 1 < args.size(); ++i) {
+        if (args[i] != name) continue;
+        value = args[i + 1];
+        args.erase(args.begin() + static_cast<long>(i), args.begin() + static_cast<long>(i) + 2);
+        return true;
+    }
+    return false;
+}
+
+bool takeFlag(std::vector<std::string>& args, const std::string& name) {
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == name) {
+            args.erase(args.begin() + static_cast<long>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool parseRegion(const std::string& text, wa::Rect& out) {
+    int v[4] = {0, 0, 0, 0};
+    size_t pos = 0;
+    for (int i = 0; i < 4; ++i) {
+        size_t used = 0;
+        try {
+            v[i] = std::stoi(text.substr(pos), &used);
+        } catch (...) {
+            return false;
+        }
+        pos += used;
+        if (i < 3) {
+            if (pos >= text.size() || text[pos] != ',') return false;
+            ++pos;
+        }
+    }
+    if (pos != text.size() || v[2] <= 0 || v[3] <= 0) return false;
+    out = wa::Rect{v[0], v[1], v[2], v[3]};
+    return true;
+}
+
+// 目标窗口 client 区域（屏幕坐标）
+bool clientRectOf(std::uint64_t handle, wa::Rect& out) {
+    HWND h = reinterpret_cast<HWND>(static_cast<UINT_PTR>(handle));
+    RECT cr{};
+    POINT origin{0, 0};
+    if (!IsWindow(h) || IsIconic(h) || !GetClientRect(h, &cr) || !ClientToScreen(h, &origin)) return false;
+    out = wa::Rect{static_cast<int>(origin.x), static_cast<int>(origin.y), static_cast<int>(cr.right - cr.left),
+                   static_cast<int>(cr.bottom - cr.top)};
+    return true;
+}
+
+int cmdShot(std::vector<std::string> args) {
+    std::string out, regionText;
+    takeStringOption(args, "--out", out);
+    const bool hasRegion = takeStringOption(args, "--region", regionText);
+    if (out.empty() || args.size() < 3) return usage();
+    wa::Rect region;
+    if (hasRegion && !parseRegion(regionText, region)) {
+        std::cerr << "--region must be x,y,w,h with positive width and height\n";
+        return 1;
+    }
+    wa::platform::Win32WindowProvider provider;
+    wa::WindowInfo target;
+    if (!findTarget(args, provider, target)) return 1;
+    wa::Rect client;
+    if (!clientRectOf(target.handle, client)) {
+        std::cerr << "cannot read the window area (minimized?). Activate the window first.\n";
+        return 1;
+    }
+    wa::Rect area = client;
+    if (hasRegion) area = wa::Rect{client.x + region.x, client.y + region.y, region.w, region.h};
+    wa::Rect actual;
+    auto shot = wa::platform::captureScreen(area, &actual);
+    if (!shot.ok()) {
+        std::cerr << wa::errName(shot.code) << ": " << shot.detail << "\n";
+        return 1;
+    }
+    auto saved = wa::platform::savePng(out, shot.value);
+    if (!saved.ok()) {
+        std::cerr << wa::errName(saved.code) << ": " << saved.detail << "\n";
+        return 1;
+    }
+    std::cout << "saved " << shot.value.w << "x" << shot.value.h << " (window-relative origin " << (actual.x - client.x)
+              << "," << (actual.y - client.y) << ") to " << out << "\n"
+              << "提示：窗口需在最前且不被遮挡；模板请选结构明显的小图（图标/按钮），不要含时间、动画或渐变。\n";
+    return 0;
+}
+
+int cmdFindImage(std::vector<std::string> args) {
+    std::string regionText, minText;
+    const bool hasRegion = takeStringOption(args, "--region", regionText);
+    const bool hasMin = takeStringOption(args, "--min", minText);
+    const bool first = takeFlag(args, "--first");
+    if (args.size() < 4) return usage();
+    const std::string templatePath = args.back();
+    args.pop_back();
+
+    wa::ImageLocator loc;
+    if (hasMin) {
+        try {
+            loc.minConfidence = std::stod(minText);
+        } catch (...) {
+            std::cerr << "--min must be a number in (0, 1]\n";
+            return 1;
+        }
+    }
+    if (hasRegion) {
+        wa::Rect r;
+        if (!parseRegion(regionText, r)) {
+            std::cerr << "--region must be x,y,w,h with positive width and height\n";
+            return 1;
+        }
+        loc.searchRegion = r;
+    }
+    if (first) loc.ambiguity = wa::Ambiguity::First;
+
+    // 模板按"相对其所在目录"解析：与流程里的写法一致
+    namespace fs = std::filesystem;
+    const fs::path tp = fs::u8path(templatePath);
+    loc.templatePath = tp.filename().u8string();
+    const std::string baseDir = tp.has_parent_path() ? tp.parent_path().u8string() : std::string(".");
+
+    wa::platform::Win32WindowProvider provider;
+    wa::WindowInfo target;
+    if (!findTarget(args, provider, target)) return 1;
+
+    wa::platform::Win32ImageLocator images(baseDir);
+    wa::CancelToken token;
+    auto hit = images.search(target.handle, loc, token);
+    if (!hit.ok()) {
+        std::cerr << wa::errName(hit.code) << ": " << hit.detail << "\n";
+        return 1;
+    }
+    wa::Rect client;
+    clientRectOf(target.handle, client);
+    const wa::Rect& r = hit.value.screenRect;
+    std::cout << "found: score " << hit.value.score << ", screen (" << r.x << "," << r.y << " " << r.w << "x" << r.h
+              << "), window-relative (" << (r.x - client.x) << "," << (r.y - client.y) << ")\n";
+    return 0;
+}
+
 int cmdStopHotkeyTest(const std::vector<std::string>& args) {
     const std::string text = args.size() > 2 ? args[2] : wa::kDefaultStopHotkey;
     auto spec = wa::parseHotkey(text);
@@ -411,7 +561,11 @@ int cmdRun(const std::vector<std::string>& args) {
     // 3) 执行
     wa::platform::Win32WindowProvider windows;
     wa::platform::UiaSession uia;  // 不可用时 uia 定位返回 Unsupported，fallback 会跳过
-    wa::platform::Win32UiaLocator locator(uia);
+    // 图像模板相对流程文件所在目录解析
+    namespace fs = std::filesystem;
+    const fs::path flowDir = fs::absolute(fs::u8path(path)).parent_path();
+    wa::platform::Win32ImageLocator images(flowDir.u8string());
+    wa::platform::Win32UiaLocator locator(uia, &images);
     wa::platform::Win32InputController input(&uia);
     wa::SteadyClock clock;
 
@@ -480,6 +634,8 @@ int main(int argc, char** argv) {
     if (cmd == "activate") return cmdFind(args, /*activate=*/true);
     if (cmd == "inspect") return cmdInspect(args);
     if (cmd == "pick") return cmdPick(args);
+    if (cmd == "shot") return cmdShot(args);
+    if (cmd == "find-image") return cmdFindImage(args);
     if (cmd == "stop-hotkey-test") return cmdStopHotkeyTest(args);
     if (cmd == "run") return cmdRun(args);
 #else

@@ -9,6 +9,7 @@
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QInputDialog>
 #include <QLabel>
@@ -536,7 +537,9 @@ bool MainWindow::startRun(bool paused, bool selectedOnly) {
     waitingIndex_ = -1;
     log_->clear();
     appendLog(paused ? QStringLiteral("开始单步调试") : QStringLiteral("开始运行"));
-    if (!run_->start(editor_.workflow(), options, paused)) return false;
+    const std::string baseDir =
+        filePath_.isEmpty() ? std::string() : stdStr(QFileInfo(filePath_).absolutePath());
+    if (!run_->start(editor_.workflow(), options, paused, baseDir)) return false;
     refreshAll();
     return true;
 }

@@ -58,7 +58,11 @@ struct ScreenPointLocator {
 struct ImageLocator {
     std::string templatePath;  // 相对路径，不得越出工作目录
     double minConfidence = 0.9;
+    // 搜索范围，相对目标窗口 client 区域左上角，物理像素；不设置表示整个 client 区域。
+    // 范围越小越快，也越不容易匹配到别处的相同图案。
     std::optional<Rect> searchRegion;
+    // 多处都匹配时：报错（默认，绝不猜）或取最靠上（再靠左）的一处
+    Ambiguity ambiguity = Ambiguity::Error;
 };
 
 using LeafLocator = std::variant<UiaLocator, WindowPointLocator, ScreenPointLocator, ImageLocator>;

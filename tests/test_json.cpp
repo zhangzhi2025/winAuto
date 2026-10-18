@@ -150,3 +150,28 @@ TEST(unicode_text_survives_roundtrip) {
     CHECK_EQ(back.name, wf.name);
     CHECK_EQ(*back.steps[1].text, "你好，\"世界\"\n\t\\");
 }
+
+TEST(image_locator_ambiguity_roundtrip_and_errors) {
+    const std::string base =
+        "{\"schemaVersion\":\"1.0\",\"id\":\"t\",\"name\":\"t\",\"windows\":{\"m\":{\"processName\":\"a.exe\"}},"
+        "\"steps\":[{\"id\":\"S1\",\"type\":\"click\",\"window\":\"m\",\"locator\":";
+    auto r = readWorkflow(base + "{\"strategy\":\"image\",\"template\":\"a.png\",\"ambiguity\":\"first\","
+                                 "\"searchRegion\":{\"x\":1,\"y\":2,\"width\":30,\"height\":40}}}]}");
+    CHECK(r.ok());
+    const auto* im = std::get_if<ImageLocator>(&*r.value.steps[0].locator);
+    CHECK(im != nullptr);
+    CHECK(im->ambiguity == Ambiguity::First);
+    CHECK(im->searchRegion.has_value());
+
+    const std::string out = writeWorkflow(r.value);
+    auto again = readWorkflow(out);
+    CHECK(again.ok());
+    const auto* im2 = std::get_if<ImageLocator>(&*again.value.steps[0].locator);
+    CHECK(im2 != nullptr);
+    CHECK(im2->ambiguity == Ambiguity::First);
+    CHECK_EQ(im2->searchRegion->w, 30);
+
+    auto bad = readWorkflow(base + "{\"strategy\":\"image\",\"template\":\"a.png\",\"ambiguity\":\"any\"}}]}");
+    CHECK(!bad.ok());
+    CHECK_CONTAINS(bad.detail, "ambiguity");
+}

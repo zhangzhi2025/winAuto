@@ -6,6 +6,7 @@
 
 #include "core/ErrCode.h"
 #include "core/Model.h"
+#include "core/StepTree.h"
 #include "core/Validator.h"
 
 namespace wa {
@@ -20,16 +21,31 @@ public:
     bool dirty() const { return dirty_; }
     void markSaved() { dirty_ = false; }
 
-    // ---- 步骤编辑（返回的下标是操作后受影响步骤的位置）
-    // 在 index 处插入默认步骤，index 超出范围则追加。窗口别名取第一个已有别名（没有则为空）。
-    size_t addStep(size_t index, StepType type);
-    Status removeStep(size_t index);
-    // 把 from 处的步骤移到 to（移动后它在 to 位置）
-    Status moveStep(size_t from, size_t to);
-    // 复制并紧随其后插入，id 重新生成
-    Result<size_t> duplicateStep(size_t index);
-    // 整步替换（属性面板提交）。id 必须在流程内唯一。
-    Status updateStep(size_t index, Step step);
+    // ---- 步骤编辑
+    // 所有 row 都是先序行号（见 StepTree.h）：父步骤、它的 then/body 子步骤、else 子步骤，依次排列。
+    // 没有 if / 循环时，行号就是步骤下标。返回值是操作后受影响步骤的行号。
+    size_t rowCount() const;
+    const Step* stepAtRow(size_t row) const;
+    std::vector<StepRow> rows() const;
+
+    // 在 row 之前插入默认步骤（与 row 同级）；row 超出范围则追加到顶层末尾。窗口别名取第一个已有别名。
+    size_t addStep(size_t row, StepType type);
+    // 插到 row 的同级之后（row 是块语句时也在整块之后，而不是块里面）
+    size_t addStepAfter(size_t row, StepType type);
+    // 追加到块语句（if / repeat / while）的末尾；elseBranch 只对 if 有效
+    Result<size_t> addStepInto(size_t blockRow, StepType type, bool elseBranch = false);
+    // 删除步骤及其全部子步骤
+    Status removeStep(size_t row);
+    // 在同一个列表里上移（delta<0）或下移（delta>0）；到头则拒绝
+    Status moveStep(size_t row, int delta);
+    // 缩进：移到上一个同级块语句的末尾（intoElse 时进入 if 的 else 分支）；上一个同级不是块则拒绝
+    Result<size_t> indentStep(size_t row, bool intoElse = false);
+    // 取消缩进：移到父块语句之后；已在顶层则拒绝
+    Result<size_t> outdentStep(size_t row);
+    // 深拷贝并紧随其后插入；它和全部子步骤的 id 都会重新生成
+    Result<size_t> duplicateStep(size_t row);
+    // 整步替换（属性面板提交，含子步骤）。id 必须在整个流程内唯一。
+    Status updateStep(size_t row, Step step);
 
     // ---- 窗口别名
     Status setWindow(const std::string& alias, WindowSpec spec);  // 新增或更新
@@ -51,8 +67,8 @@ public:
     // ---- 校验
     // 每次修改后失效，调用时重算。
     const ValidationReport& validation();
-    // 路径以 "steps[index]" 开头的问题
-    std::vector<Issue> issuesForStep(size_t index);
+    // 属于这一步自身的问题（不含它的子步骤的）
+    std::vector<Issue> issuesForStep(size_t row);
     // 不属于任何步骤的问题（windows / execution / 顶层）
     std::vector<Issue> issuesOutsideSteps();
 
@@ -64,7 +80,8 @@ public:
 private:
     void snapshot();  // 修改前调用
     void changed();   // 修改后调用
-    bool idUsed(const std::string& id, size_t except) const;
+    bool idUsed(const std::string& id, size_t exceptRow) const;
+    void commit(Workflow&& next);  // 快照 + 替换 + 标记已修改
 
     Workflow wf_;
     bool dirty_ = false;

@@ -16,6 +16,7 @@ const char* errName(ErrCode c) {
         case ErrCode::Cancelled: return "Cancelled";
         case ErrCode::InputBlocked: return "InputBlocked";
         case ErrCode::Unsupported: return "Unsupported";
+        case ErrCode::LimitExceeded: return "LimitExceeded";
         case ErrCode::Internal: return "Internal";
     }
     return "Unknown";
@@ -35,6 +36,7 @@ const char* errText(ErrCode c) {
         case ErrCode::Cancelled: return "已取消";
         case ErrCode::InputBlocked: return "输入被系统或目标程序阻止";
         case ErrCode::Unsupported: return "目标或平台不支持该操作";
+        case ErrCode::LimitExceeded: return "循环次数或步骤执行次数超过上限";
         case ErrCode::Internal: return "内部错误";
     }
     return "未知错误";

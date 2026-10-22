@@ -9,6 +9,8 @@
 
 namespace wa {
 
+constexpr int kDefaultMaxStepExecutions = 10000;
+
 struct Point {
     int x = 0;
     int y = 0;
@@ -90,8 +92,14 @@ enum class StepType {
     Hotkey,
     Wait,
     WaitForElement,
-    AssertElement
+    AssertElement,
+    // ---- 流程控制（块语句，带子步骤）
+    If,      // condition 成立执行 body（JSON: then），否则执行 elseBody（JSON: else）
+    Repeat,  // 固定次数循环 body
+    While    // condition 成立时循环 body，最多 maxIterations 次
 };
+
+bool isBlockType(StepType t);
 
 enum class FailurePolicy { Stop, Continue };
 enum class InputMethod { Unicode, Clipboard };
@@ -112,6 +120,8 @@ struct WindowSpec {
     std::string titleContains;
     int timeoutMs = 5000;
 };
+
+struct Step;
 
 struct Step {
     std::string id;
@@ -140,6 +150,17 @@ struct Step {
     std::optional<Expect> expect;
     std::optional<RetryPolicy> retry;
     std::optional<FailurePolicy> onFailure;
+
+    // ---- if / while：条件。type 为 "element_exists" 或 "element_missing"，locator 在 window 里定位。
+    // timeoutMs（本结构共用的字段）在条件里表示"最多等多久让条件变为真"，缺省 0 = 只检查一次。
+    std::optional<Expect> condition;
+    // ---- repeat / while
+    std::optional<int> times;          // repeat：次数
+    std::optional<int> maxIterations;  // while：硬上限，超过即失败（LimitExceeded），绝不无限循环
+    std::optional<int> intervalMs;     // 两次迭代之间的间隔（缺省 kDefaultLoopIntervalMs）
+    // ---- 子步骤：If 的 then 分支 / 循环体 放在 body；If 的 else 分支放在 elseBody
+    std::vector<Step> body;
+    std::vector<Step> elseBody;
 };
 
 struct ExecutionOptions {
@@ -147,6 +168,8 @@ struct ExecutionOptions {
     FailurePolicy onFailure = FailurePolicy::Stop;
     bool screenshotOnFailure = false;
     RetryPolicy retry;
+    // 整个运行最多执行多少次步骤（含块语句本身和循环里的每一次）。防止嵌套循环失控。
+    int maxStepExecutions = kDefaultMaxStepExecutions;
 };
 
 struct Workflow {
@@ -169,5 +192,10 @@ bool requiresLocator(StepType t);
 
 inline constexpr const char* kSchemaVersion = "1.0";
 constexpr int kMaxTimeoutMs = 60000;
+constexpr int kMaxLoopCount = 1000;           // repeat.times / while.maxIterations 上限
+constexpr int kMaxNesting = 8;                // 块语句最大嵌套深度
+constexpr int kDefaultLoopIntervalMs = 100;
+constexpr int kMaxStepExecutionsLimit = 1000000;
+constexpr size_t kMaxClipboardBytes = 1u << 20;  // 剪贴板输入的文本上限（UTF-8，1 MiB）
 
 }  // namespace wa

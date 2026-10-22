@@ -245,7 +245,11 @@ TEST(clipboard_input_rules) {
     wf.steps.push_back(t);
     auto r = validateWorkflow(wf);
     CHECK(r.ok());
-    CHECK(r.has("unsupported_in_mvp"));
+    CHECK(!r.has("unsupported_in_mvp"));  // 阶段 6 起剪贴板输入可用
+
+    wf.steps.back().text = std::string(kMaxClipboardBytes + 1, 'a');
+    CHECK(validateWorkflow(wf).has("text_too_long"));
+    wf.steps.back().text = "hello";
 
     wf.steps.back().sensitive = true;
     CHECK(validateWorkflow(wf).has("sensitive_clipboard"));

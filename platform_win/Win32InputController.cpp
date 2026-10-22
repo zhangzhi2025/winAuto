@@ -101,7 +101,8 @@ Status Win32InputController::setValue(const ElementRef& element, const std::stri
 
 Status Win32InputController::typeText(const std::string& text, InputMethod method) {
     if (method == InputMethod::Clipboard) {
-        return Status::failure(ErrCode::Unsupported, "clipboard input is not implemented");
+        return Status::failure(ErrCode::Unsupported,
+                               "clipboard input is orchestrated by the engine through IClipboard, not by typeText");
     }
     Result<std::vector<TextEvent>> plan = buildTextEvents(text);
     if (!plan.ok()) return failAs<Unit>(plan);

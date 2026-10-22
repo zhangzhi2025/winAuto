@@ -29,14 +29,17 @@ public:
     // 只更新问题列表，不动表单（用户可能正在输入）
     void setIssues(const std::vector<wa::Issue>& issues);
 
-    // 用于"拾取控件"把结果写回：locator 编辑框（expect=false）或 expect 编辑框（expect=true）
-    void setLocatorText(const QString& json, bool expect);
+    // 定位器编辑框有三个：步骤自己的 locator、执行后校验 expect、if/while 的条件 condition
+    enum Target { TargetLocator = 0, TargetExpect = 1, TargetCondition = 2 };
+    // 用于"拾取控件 / 截取模板"把结果写回
+    void setLocatorText(const QString& json, int target);
 
 signals:
     // 表单内容整体合法时发出，携带新的 Step
     void stepEdited(const wa::Step& step);
-    // 请求拾取控件；expect 表示写入 expect.locator
-    void pickRequested(bool expect);
+    // 请求拾取控件 / 截取模板；target 见 Target
+    void pickRequested(int target);
+    void captureRequested(int target);
 
 private slots:
     void onFormChanged();
@@ -68,6 +71,12 @@ private:
     QCheckBox* expectOn_ = nullptr;
     QPlainTextEdit* expect_ = nullptr;
     QWidget* expectBox_ = nullptr;
+    QComboBox* condType_ = nullptr;
+    QPlainTextEdit* cond_ = nullptr;
+    QWidget* condBox_ = nullptr;
+    QSpinBox* times_ = nullptr;
+    QSpinBox* maxIter_ = nullptr;
+    QSpinBox* interval_ = nullptr;
     QSpinBox* retryTimes_ = nullptr;
     QSpinBox* retryInterval_ = nullptr;
     QComboBox* onFailure_ = nullptr;

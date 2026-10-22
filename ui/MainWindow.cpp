@@ -2,9 +2,12 @@
 
 #include <QAction>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
+#include <QDir>
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QFile>
@@ -26,24 +29,30 @@
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "ElementPickerDialog.h"
 #include "RunController.h"
 #include "StepPanel.h"
+#include "TemplateCaptureDialog.h"
 #include "Util.h"
 #include "WindowsDialog.h"
 #include "core/ExecutionState.h"
 #include "core/Json.h"
+#include "core/StepTree.h"
 #include "core/Summary.h"
 
 namespace {
 const wa::StepType kStepTypes[] = {wa::StepType::ActivateWindow, wa::StepType::Click,
                                    wa::StepType::SetValue,       wa::StepType::InputText,
                                    wa::StepType::Hotkey,         wa::StepType::Wait,
-                                   wa::StepType::WaitForElement, wa::StepType::AssertElement};
+                                   wa::StepType::WaitForElement, wa::StepType::AssertElement,
+                                   wa::StepType::If,             wa::StepType::Repeat,
+                                   wa::StepType::While};
 
 QString typeLabel(wa::StepType t) {
     switch (t) {
@@ -55,6 +64,9 @@ QString typeLabel(wa::StepType t) {
         case wa::StepType::Wait: return QStringLiteral("等待");
         case wa::StepType::WaitForElement: return QStringLiteral("等待控件");
         case wa::StepType::AssertElement: return QStringLiteral("断言控件");
+        case wa::StepType::If: return QStringLiteral("如果");
+        case wa::StepType::Repeat: return QStringLiteral("重复");
+        case wa::StepType::While: return QStringLiteral("当…时循环");
         default: return QStringLiteral("未知类型");
     }
 }
@@ -104,6 +116,7 @@ void MainWindow::buildUi() {
     connect(list_, &QListWidget::currentRowChanged, this, [this] { onStepSelected(); });
     connect(panel_, &StepPanel::stepEdited, this, &MainWindow::onStepEdited);
     connect(panel_, &StepPanel::pickRequested, this, &MainWindow::onPickRequested);
+    connect(panel_, &StepPanel::captureRequested, this, &MainWindow::onCaptureRequested);
 }
 
 void MainWindow::buildMenus() {
@@ -124,10 +137,26 @@ void MainWindow::buildMenus() {
         const int type = static_cast<int>(t);
         addMenu->addAction(typeLabel(t), this, [this, type] { addStep(type); });
     }
+    // 往 if / repeat / while 里面添加：添加到所选块语句的末尾
+    addIntoMenu_ = edit->addMenu(QStringLiteral("添加到所选块内（如果/重复/循环体）"));
+    addElseMenu_ = edit->addMenu(QStringLiteral("添加到所选 if 的\"否则\"分支"));
+    for (wa::StepType t : kStepTypes) {
+        const int type = static_cast<int>(t);
+        addIntoMenu_->addAction(typeLabel(t), this, [this, type] { addStepIntoBlock(type, false); });
+        addElseMenu_->addAction(typeLabel(t), this, [this, type] { addStepIntoBlock(type, true); });
+    }
     actDup_ = edit->addAction(QStringLiteral("复制步骤"), this, &MainWindow::duplicateStep, QKeySequence(Qt::CTRL | Qt::Key_D));
     actRemove_ = edit->addAction(QStringLiteral("删除步骤"), this, &MainWindow::removeStep, QKeySequence::Delete);
     actUp_ = edit->addAction(QStringLiteral("上移"), this, [this] { moveStep(-1); }, QKeySequence(Qt::ALT | Qt::Key_Up));
     actDown_ = edit->addAction(QStringLiteral("下移"), this, [this] { moveStep(1); }, QKeySequence(Qt::ALT | Qt::Key_Down));
+
+    edit->addSeparator();
+    actIndent_ = edit->addAction(QStringLiteral("缩进（移入上一个块）"), this, [this] { indentStep(false); },
+                                 QKeySequence(Qt::ALT | Qt::Key_Right));
+    actIndentElse_ = edit->addAction(QStringLiteral("缩进到上一个 if 的\"否则\""), this,
+                                     [this] { indentStep(true); });
+    actOutdent_ = edit->addAction(QStringLiteral("取消缩进（移出所在块）"), this, [this] { outdentStep(); },
+                                  QKeySequence(Qt::ALT | Qt::Key_Left));
 
     auto* flow = menuBar()->addMenu(QStringLiteral("流程(&W)"));
     flow->addAction(QStringLiteral("目标窗口…"), this, &MainWindow::editWindows);
@@ -139,6 +168,8 @@ void MainWindow::buildMenus() {
                                 QKeySequence(Qt::CTRL | Qt::Key_F5));
     actDebug_ = run->addAction(QStringLiteral("单步调试（从头）"), this, &MainWindow::debugFromStart,
                                QKeySequence(Qt::Key_F11));
+    run->addSeparator();
+    actShots_ = run->addAction(QStringLiteral("打开失败截图文件夹"), this, &MainWindow::openScreenshotDir);
     run->addSeparator();
     actStep_ = run->addAction(QStringLiteral("执行当前步"), this, &MainWindow::stepNext, QKeySequence(Qt::Key_F10));
     actSkip_ = run->addAction(QStringLiteral("跳过当前步"), this, &MainWindow::skipStep, QKeySequence(Qt::Key_F9));
@@ -167,10 +198,18 @@ std::vector<std::string> MainWindow::windowAliases() const {
     return out;
 }
 
-QString MainWindow::stepText(size_t index) const {
-    const wa::Step& s = editor_.workflow().steps[index];
+QString MainWindow::stepText(size_t row) const {
+    const auto rows = editor_.rows();
+    const wa::StepRow& r = rows[row];
+    const wa::Step& s = *r.step;
     QString text = QStringLiteral("%1  %2").arg(qs(s.id), typeLabel(s.type));
     if (!s.window.empty()) text += QStringLiteral(" · ") + qs(s.window);
+    if (wa::isBlockType(s.type)) text += QStringLiteral("  ▾");
+    // 缩进显示层级；else 分支里的步骤带"否则"标记
+    QString indent(r.depth * 4, QLatin1Char(' '));
+    if (r.inElse) indent += QStringLiteral("否则 ▸ ");
+    else if (r.depth > 0) indent += QStringLiteral("└ ");
+    text = indent + text;
     const auto it = runMarks_.find(s.id);
     if (it != runMarks_.end()) text = it->second + QLatin1Char(' ') + text;
     return text;
@@ -181,8 +220,8 @@ int MainWindow::currentRow() const { return list_->currentRow(); }
 void MainWindow::refreshList(int selectRow) {
     list_->blockSignals(true);
     list_->clear();
-    const auto& steps = editor_.workflow().steps;
-    for (size_t i = 0; i < steps.size(); ++i) {
+    const size_t count = editor_.rowCount();
+    for (size_t i = 0; i < count; ++i) {
         auto* item = new QListWidgetItem(stepText(i));
         const auto issues = editor_.issuesForStep(i);
         bool hasError = false;
@@ -197,7 +236,7 @@ void MainWindow::refreshList(int selectRow) {
         if (waiting_ && static_cast<int>(i) == waitingIndex_) item->setBackground(QBrush(QColor(255, 244, 179)));
         list_->addItem(item);
     }
-    if (selectRow >= static_cast<int>(steps.size())) selectRow = static_cast<int>(steps.size()) - 1;
+    if (selectRow >= static_cast<int>(count)) selectRow = static_cast<int>(count) - 1;
     if (selectRow >= 0) list_->setCurrentRow(selectRow);
     list_->blockSignals(false);
 }
@@ -215,7 +254,7 @@ void MainWindow::refreshAll(int selectRow) {
 void MainWindow::refreshStatus() {
     const auto& rep = editor_.validation();
     statusLabel_->setText(QStringLiteral("%1 个步骤 · %2 个错误 · %3 个警告")
-                              .arg(editor_.workflow().steps.size())
+                              .arg(editor_.rowCount())
                               .arg(rep.errorCount())
                               .arg(rep.warningCount()));
 }
@@ -229,7 +268,9 @@ void MainWindow::updateActions() {
     const bool running = run_->running();
     const int row = currentRow();
     const bool hasRow = row >= 0;
-    const int count = static_cast<int>(editor_.workflow().steps.size());
+    const int count = static_cast<int>(editor_.rowCount());
+    const wa::Step* cur = hasRow ? editor_.stepAtRow(static_cast<size_t>(row)) : nullptr;
+    const bool curBlock = cur && wa::isBlockType(cur->type);
 
     actNew_->setEnabled(!running);
     actOpen_->setEnabled(!running);
@@ -237,8 +278,14 @@ void MainWindow::updateActions() {
     actRedo_->setEnabled(!running && editor_.canRedo());
     actRemove_->setEnabled(!running && hasRow);
     actDup_->setEnabled(!running && hasRow);
-    actUp_->setEnabled(!running && hasRow && row > 0);
-    actDown_->setEnabled(!running && hasRow && row + 1 < count);
+    actUp_->setEnabled(!running && hasRow);
+    actDown_->setEnabled(!running && hasRow);
+    actIndent_->setEnabled(!running && hasRow);
+    actIndentElse_->setEnabled(!running && hasRow);
+    actOutdent_->setEnabled(!running && hasRow);
+    addIntoMenu_->setEnabled(!running && curBlock);
+    addElseMenu_->setEnabled(!running && cur && cur->type == wa::StepType::If);
+    actShots_->setEnabled(!lastScreenshotDir_.empty());
     panel_->setEnabled(!running && hasRow);
 
     actRunAll_->setEnabled(!running && count > 0);
@@ -348,16 +395,45 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 
 // ------------------------------------------------------------------ 编辑
 
+void MainWindow::selectStepId(const std::string& id) {
+    const auto rows = editor_.rows();
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].step->id == id) {
+            refreshAll(static_cast<int>(i));
+            return;
+        }
+    }
+    refreshAll(-2);
+}
+
 void MainWindow::addStep(int type) {
     const int row = currentRow();
-    const size_t at = row < 0 ? editor_.workflow().steps.size() : static_cast<size_t>(row) + 1;
-    const size_t index = editor_.addStep(at, static_cast<wa::StepType>(type));
-    refreshAll(static_cast<int>(index));
+    const size_t at = row < 0 ? editor_.addStep(editor_.rowCount(), static_cast<wa::StepType>(type))
+                              : editor_.addStepAfter(static_cast<size_t>(row), static_cast<wa::StepType>(type));
+    refreshAll(static_cast<int>(at));
+}
+
+void MainWindow::addStepIntoBlock(int type, bool elseBranch) {
+    const int row = currentRow();
+    if (row < 0) return;
+    auto r = editor_.addStepInto(static_cast<size_t>(row), static_cast<wa::StepType>(type), elseBranch);
+    if (!r.ok()) {
+        QMessageBox::information(this, QStringLiteral("无法添加"), qs(r.detail));
+        return;
+    }
+    refreshAll(static_cast<int>(r.value));
 }
 
 void MainWindow::removeStep() {
     const int row = currentRow();
     if (row < 0) return;
+    const wa::Step* s = editor_.stepAtRow(static_cast<size_t>(row));
+    if (s && (!s->body.empty() || !s->elseBody.empty())) {
+        const auto answer = QMessageBox::question(this, QStringLiteral("删除块语句"),
+                                                  QStringLiteral("它里面的 %1 个步骤会一起删除（可撤销）。继续？")
+                                                      .arg(wa::countSteps(s->body) + wa::countSteps(s->elseBody)));
+        if (answer != QMessageBox::Yes) return;
+    }
     editor_.removeStep(static_cast<size_t>(row));
     refreshAll(row);
 }
@@ -371,10 +447,36 @@ void MainWindow::duplicateStep() {
 
 void MainWindow::moveStep(int delta) {
     const int row = currentRow();
-    const int to = row + delta;
-    if (row < 0 || to < 0 || to >= static_cast<int>(editor_.workflow().steps.size())) return;
-    editor_.moveStep(static_cast<size_t>(row), static_cast<size_t>(to));
-    refreshAll(to);
+    if (row < 0) return;
+    const std::string id = editor_.stepAtRow(static_cast<size_t>(row))->id;
+    const wa::Status st = editor_.moveStep(static_cast<size_t>(row), delta);
+    if (!st.ok()) {
+        statusBar()->showMessage(qs(st.detail), 3000);
+        return;
+    }
+    selectStepId(id);
+}
+
+void MainWindow::indentStep(bool intoElse) {
+    const int row = currentRow();
+    if (row < 0) return;
+    auto r = editor_.indentStep(static_cast<size_t>(row), intoElse);
+    if (!r.ok()) {
+        statusBar()->showMessage(qs(r.detail), 4000);
+        return;
+    }
+    refreshAll(static_cast<int>(r.value));
+}
+
+void MainWindow::outdentStep() {
+    const int row = currentRow();
+    if (row < 0) return;
+    auto r = editor_.outdentStep(static_cast<size_t>(row));
+    if (!r.ok()) {
+        statusBar()->showMessage(qs(r.detail), 4000);
+        return;
+    }
+    refreshAll(static_cast<int>(r.value));
 }
 
 void MainWindow::editWindows() {
@@ -396,9 +498,18 @@ void MainWindow::editSettings() {
     policy->addItem(QStringLiteral("失败即停止"));
     policy->addItem(QStringLiteral("忽略失败继续"));
     policy->setCurrentIndex(editor_.workflow().execution.onFailure == wa::FailurePolicy::Stop ? 0 : 1);
+    auto* shots = new QCheckBox(QStringLiteral("失败时自动截取目标窗口画面"), &dlg);
+    shots->setChecked(editor_.workflow().execution.screenshotOnFailure);
+    shots->setToolTip(QStringLiteral("保存到流程文件旁的 screenshots 文件夹；执行过敏感/运行时询问的步骤后不再截图"));
+    auto* budget = new QSpinBox(&dlg);
+    budget->setRange(1, wa::kMaxStepExecutionsLimit);
+    budget->setValue(editor_.workflow().execution.maxStepExecutions);
+    budget->setToolTip(QStringLiteral("整个运行最多执行多少次步骤（含循环里的每一次），超过即停止"));
     form->addRow(QStringLiteral("名称"), name);
     form->addRow(QStringLiteral("步骤默认超时"), timeout);
     form->addRow(QStringLiteral("默认失败策略"), policy);
+    form->addRow(QString(), shots);
+    form->addRow(QStringLiteral("步骤执行次数上限"), budget);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     form->addRow(buttons);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -409,6 +520,8 @@ void MainWindow::editSettings() {
     wa::ExecutionOptions ex = editor_.workflow().execution;
     ex.stepTimeoutMs = timeout->value();
     ex.onFailure = policy->currentIndex() == 0 ? wa::FailurePolicy::Stop : wa::FailurePolicy::Continue;
+    ex.screenshotOnFailure = shots->isChecked();
+    ex.maxStepExecutions = budget->value();
     editor_.setExecution(ex);
     refreshAll();
 }
@@ -425,10 +538,10 @@ void MainWindow::redo() {
 
 void MainWindow::onStepSelected() {
     const int row = currentRow();
-    if (row < 0 || row >= static_cast<int>(editor_.workflow().steps.size())) {
+    if (row < 0 || row >= static_cast<int>(editor_.rowCount())) {
         panel_->clearStep();
     } else {
-        panel_->setStep(editor_.workflow().steps[static_cast<size_t>(row)], windowAliases(),
+        panel_->setStep(*editor_.stepAtRow(static_cast<size_t>(row)), windowAliases(),
                         editor_.issuesForStep(static_cast<size_t>(row)));
     }
     updateActions();
@@ -451,10 +564,10 @@ void MainWindow::onStepEdited(const wa::Step& step) {
     panel_->setIssues(editor_.issuesForStep(static_cast<size_t>(row)));
 }
 
-void MainWindow::onPickRequested(bool expect) {
+void MainWindow::onPickRequested(int target) {
     const int row = currentRow();
     if (row < 0) return;
-    const wa::Step& s = editor_.workflow().steps[static_cast<size_t>(row)];
+    const wa::Step& s = *editor_.stepAtRow(static_cast<size_t>(row));
     auto it = editor_.workflow().windows.find(s.window);
     if (it == editor_.workflow().windows.end()) {
         QMessageBox::information(this, QStringLiteral("拾取控件"),
@@ -463,7 +576,35 @@ void MainWindow::onPickRequested(bool expect) {
     }
     ElementPickerDialog dlg(it->second, this);
     if (dlg.exec() != QDialog::Accepted) return;
-    panel_->setLocatorText(dlg.locatorJson(), expect);  // 文本变化会经面板的合并定时器提交
+    panel_->setLocatorText(dlg.locatorJson(), target);  // 文本变化会经面板的合并定时器提交
+}
+
+void MainWindow::onCaptureRequested(int target) {
+    const int row = currentRow();
+    if (row < 0) return;
+    const wa::Step& s = *editor_.stepAtRow(static_cast<size_t>(row));
+    auto it = editor_.workflow().windows.find(s.window);
+    if (it == editor_.workflow().windows.end()) {
+        QMessageBox::information(this, QStringLiteral("截取模板"),
+                                 QStringLiteral("请先给这一步选择目标窗口（流程 → 目标窗口…）。"));
+        return;
+    }
+    // 模板文件按相对路径存在流程文件旁边，所以流程必须先有保存位置
+    if (filePath_.isEmpty()) {
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("截取模板"),
+            QStringLiteral("模板图片保存在流程文件旁边的 templates 文件夹，需要先保存流程。现在保存吗？"));
+        if (answer != QMessageBox::Yes || !save()) return;
+    }
+    QImage image;
+    QString error;
+    if (!TemplateCaptureDialog::grabTarget(it->second, this, image, error)) {
+        QMessageBox::warning(this, QStringLiteral("截取模板"), error);
+        return;
+    }
+    TemplateCaptureDialog dlg(image, QFileInfo(filePath_).absolutePath(), qs(s.id), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    panel_->setLocatorText(dlg.locatorJson(), target);
 }
 
 // ------------------------------------------------------------------ 运行
@@ -519,6 +660,25 @@ bool MainWindow::confirmRun(const wa::Workflow& wf, bool& confirmedRisks) {
     return true;
 }
 
+// 每次运行一个时间戳子目录：流程文件旁的 screenshots/；流程还没保存则放到系统临时目录
+std::string MainWindow::startScreenshotDir() const {
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    const QString base = filePath_.isEmpty()
+                             ? QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QStringLiteral("/winauto")
+                             : QFileInfo(filePath_).absolutePath();
+    return stdStr(QDir::cleanPath(base + QStringLiteral("/screenshots/") + stamp));
+}
+
+void MainWindow::openScreenshotDir() {
+    if (lastScreenshotDir_.empty()) return;
+    const QString dir = qs(lastScreenshotDir_);
+    if (!QFileInfo::exists(dir)) {
+        QMessageBox::information(this, QStringLiteral("失败截图"), QStringLiteral("这次运行没有产生截图。"));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
 bool MainWindow::startRun(bool paused, bool selectedOnly) {
     if (run_->running()) return false;
     bool confirmed = false;
@@ -531,6 +691,10 @@ bool MainWindow::startRun(bool paused, bool selectedOnly) {
         if (row < 0) return false;
         options.firstStep = static_cast<size_t>(row);
         options.lastStep = static_cast<size_t>(row);
+    }
+    if (editor_.workflow().execution.screenshotOnFailure) {
+        options.screenshotDir = startScreenshotDir();
+        lastScreenshotDir_ = options.screenshotDir;
     }
     runMarks_.clear();
     waiting_ = false;

@@ -29,6 +29,9 @@ const char* toString(StepType t) {
         case StepType::Wait: return "wait";
         case StepType::WaitForElement: return "wait_for_element";
         case StepType::AssertElement: return "assert_element";
+        case StepType::If: return "if";
+        case StepType::Repeat: return "repeat";
+        case StepType::While: return "while";
         case StepType::Unknown: return "unknown";
     }
     return "unknown";
@@ -38,14 +41,21 @@ StepType parseStepType(const std::string& s) {
     static const StepType all[] = {StepType::ActivateWindow, StepType::Click,
                                    StepType::SetValue,       StepType::InputText,
                                    StepType::Hotkey,         StepType::Wait,
-                                   StepType::WaitForElement, StepType::AssertElement};
+                                   StepType::WaitForElement, StepType::AssertElement,
+                                   StepType::If,             StepType::Repeat,
+                                   StepType::While};
     for (StepType t : all) {
         if (s == toString(t)) return t;
     }
     return StepType::Unknown;
 }
 
-bool requiresWindow(StepType t) { return t != StepType::Wait && t != StepType::Unknown; }
+bool isBlockType(StepType t) { return t == StepType::If || t == StepType::Repeat || t == StepType::While; }
+
+// repeat 不操作任何窗口；if / while 的条件要在某个窗口里定位控件
+bool requiresWindow(StepType t) {
+    return t != StepType::Wait && t != StepType::Repeat && t != StepType::Unknown;
+}
 
 bool requiresLocator(StepType t) {
     return t == StepType::Click || t == StepType::SetValue || t == StepType::WaitForElement ||

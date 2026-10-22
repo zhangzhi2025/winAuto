@@ -11,7 +11,7 @@ TEST(every_error_code_has_name_and_text) {
                            ErrCode::WindowNotFound, ErrCode::WindowElevated, ErrCode::ElementNotFound,
                            ErrCode::ElementAmbiguous, ErrCode::ExpectationFailed, ErrCode::Timeout,
                            ErrCode::Cancelled,    ErrCode::InputBlocked,     ErrCode::Unsupported,
-                           ErrCode::Internal};
+                           ErrCode::LimitExceeded, ErrCode::Internal};
     std::set<std::string> names;
     for (ErrCode c : all) {
         CHECK(std::string(errName(c)) != "Unknown");

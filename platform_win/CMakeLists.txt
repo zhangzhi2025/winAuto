@@ -3,6 +3,7 @@
 # 阶段 2：SendInput 输入、窗口坐标定位。
 # 阶段 3：UI Automation（快照读取 + Invoke/Value），匹配规则在 core。
 # 阶段 5：图像定位（GDI 截屏 + WIC 读图，匹配规则在 core）。
+# 阶段 6：失败截图、剪贴板输入。
 add_library(winauto_platform STATIC
     DpiHelper.cpp
     Win32WindowProvider.cpp
@@ -14,6 +15,9 @@ add_library(winauto_platform STATIC
     ScreenCapture.cpp
     ImageFile.cpp
     Win32ImageLocator.cpp
+    Win32Screenshot.cpp
+    Win32Clipboard.cpp
+    WindowGrab.cpp
 )
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(winauto_platform PUBLIC winauto_core)

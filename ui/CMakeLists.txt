@@ -6,6 +6,7 @@ add_executable(winauto-ui WIN32
     WindowPickerDialog.cpp
     WindowsDialog.cpp
     ElementPickerDialog.cpp
+    TemplateCaptureDialog.cpp
     RunController.cpp
 )
 target_link_libraries(winauto-ui PRIVATE Qt5::Widgets winauto_core)

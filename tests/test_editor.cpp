@@ -44,9 +44,10 @@ TEST(move_and_duplicate_and_remove) {
     WorkflowEditor e = loaded();
     e.addStep(1, StepType::Click);
     e.addStep(2, StepType::Hotkey);
-    CHECK(e.moveStep(2, 0).ok());
+    CHECK(e.moveStep(2, -2).ok());
     CHECK(e.workflow().steps[0].type == StepType::Hotkey);
     CHECK(!e.moveStep(0, 9).ok());
+    CHECK(!e.moveStep(0, -1).ok());
     auto d = e.duplicateStep(0);
     CHECK(d.ok());
     CHECK_EQ(d.value, static_cast<size_t>(1));

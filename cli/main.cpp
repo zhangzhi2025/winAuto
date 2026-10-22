@@ -4,12 +4,14 @@
 //   find <process> [title]         按流程里同样的规则查找唯一窗口（仅 Windows）
 //   activate <process> [title]     查找并激活窗口，拒绝提权目标（仅 Windows）
 //   stop-hotkey-test [hotkey]      验证全局停止热键能否注册并被触发（仅 Windows）
-//   run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10]
-//                                  执行流程（仅 Windows）
+//   run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>]
+//                                  执行流程（仅 Windows）。流程里开了 screenshotOnFailure 时，失败截图默认存到
+//                                  <流程目录>/screenshots/<时间戳>/，--screenshot-dir 可改位置
 //
 // 退出码：0 成功；1 失败（校验未通过、执行失败、被拒绝等）；2 用法错误；3 当前平台不支持；4 被用户取消
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -25,7 +27,9 @@
 #include <shellapi.h>
 
 #include "DpiHelper.h"
+#include "Win32Clipboard.h"
 #include "Win32InputController.h"
+#include "Win32Screenshot.h"
 #include "ImageFile.h"
 #include "ScreenCapture.h"
 #include "Win32ImageLocator.h"
@@ -81,7 +85,7 @@ int usage() {
                  "                                                            save a template image (region is relative to the window client area)\n"
                  "  winauto-cli find-image <process> [titleContains] <template.png> [--min 0.9] [--region x,y,w,h] [--first]\n"
                  "  winauto-cli stop-hotkey-test [hotkey]\n"
-                 "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10]\n"
+                 "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>]\n"
 #endif
                  ;
     return 2;
@@ -498,8 +502,10 @@ int cmdRun(const std::vector<std::string>& args) {
     bool yes = false;
     bool confirmRisks = false;
     std::string hotkeyText = wa::kDefaultStopHotkey;
+    std::string screenshotDir;
     for (size_t i = 2; i < args.size(); ++i) {
         if (args[i] == "--yes") yes = true;
+        else if (args[i] == "--screenshot-dir" && i + 1 < args.size()) screenshotDir = args[++i];
         else if (args[i] == "--confirm-risks") confirmRisks = true;
         else if (args[i] == "--hotkey" && i + 1 < args.size()) hotkeyText = args[++i];
         else if (!args[i].empty() && args[i][0] == '-') return usage();
@@ -567,6 +573,8 @@ int cmdRun(const std::vector<std::string>& args) {
     wa::platform::Win32ImageLocator images(flowDir.u8string());
     wa::platform::Win32UiaLocator locator(uia, &images);
     wa::platform::Win32InputController input(&uia);
+    wa::platform::Win32Clipboard clipboard;    // 剪贴板输入用；在使用它的线程里创建
+    wa::platform::Win32Screenshot screenshot;
     wa::SteadyClock clock;
 
     wa::EngineDeps deps;
@@ -574,11 +582,17 @@ int cmdRun(const std::vector<std::string>& args) {
     deps.locator = &locator;
     deps.input = &input;
     deps.clock = &clock;
+    deps.clipboard = &clipboard;
+    deps.screenshot = &screenshot;
     deps.prompt = [](const wa::Step& s) { return readSecret("请输入步骤 " + s.id + " 的内容（不回显）："); };
-    deps.observer.onStepStarted = [](const std::string& id) { std::cout << "  " << id << " ... " << std::flush; };
+    // 每步结束时打印一行。块语句（if / repeat / while）在它的子步骤全部结束后才打印，
+    // 所以先看到子步骤，最后是块自己的汇总；path 里的 "R#2" 表示 R 循环的第 2 轮。
     deps.observer.onStepFinished = [](const wa::StepRecord& r) {
-        if (r.code == wa::ErrCode::Ok) {
-            std::cout << "ok (" << r.durationMs << " ms)\n";
+        std::cout << "  " << r.path << "  [" << r.type << "]  ";
+        if (r.skipped) {
+            std::cout << "skipped\n";
+        } else if (r.code == wa::ErrCode::Ok) {
+            std::cout << "ok (" << r.durationMs << " ms)" << (r.detail.empty() ? "" : " - " + r.detail) << "\n";
         } else {
             std::cout << "FAILED " << wa::errName(r.code) << (r.detail.empty() ? "" : ": " + r.detail) << "\n";
         }
@@ -586,14 +600,27 @@ int cmdRun(const std::vector<std::string>& args) {
 
     wa::RunOptions options;
     options.confirmedRisks = confirmRisks;
+    if (wf.value.execution.screenshotOnFailure) {
+        if (screenshotDir.empty()) {
+            char stamp[32] = "run";
+            const std::time_t now = std::time(nullptr);
+            std::tm local{};
+            localtime_s(&local, &now);
+            std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", &local);
+            screenshotDir = (flowDir / "screenshots" / stamp).u8string();
+        }
+        options.screenshotDir = screenshotDir;
+        std::cout << "失败时截图保存到：" << screenshotDir << "\n\n";
+    }
     wa::WorkflowEngine engine(deps);
     const wa::RunReport result = engine.run(wf.value, token, options);
     guard.disarm();
 
     std::cout << "\n";
+    for (const auto& shot : result.screenshots) std::cout << "截图：" << shot << "\n";
     switch (result.state) {
         case wa::ExecutionState::Succeeded:
-            std::cout << "完成：全部 " << result.steps.size() << " 步成功\n";
+            std::cout << "完成：共执行 " << result.steps.size() << " 步（含循环里的每一次），全部成功\n";
             return 0;
         case wa::ExecutionState::Cancelled:
             std::cout << "已取消" << (result.failedStepId.empty() ? "" : "（在步骤 " + result.failedStepId + "）") << "\n";

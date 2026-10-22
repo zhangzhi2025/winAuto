@@ -50,9 +50,7 @@ public:
         }
         if (const json* s = find(root, "steps")) {
             if (!s->is_array()) throw ReadError{"steps", "must be an array"};
-            for (size_t i = 0; i < s->size(); ++i) {
-                wf_.steps.push_back(readStep((*s)[i], indexPath("steps", i)));
-            }
+            wf_.steps = readSteps(*s, "steps", 0);
         }
     }
 
@@ -147,13 +145,14 @@ private:
 
     ExecutionOptions readExecution(const json& v, const std::string& path) {
         requireObject(v, path);
-        noteUnknown(v, {"stepTimeoutMs", "onFailure", "screenshotOnFailure", "retry"}, path);
+        noteUnknown(v, {"stepTimeoutMs", "onFailure", "screenshotOnFailure", "retry", "maxStepExecutions"}, path);
         ExecutionOptions e;
         e.stepTimeoutMs = integer(v, "stepTimeoutMs", e.stepTimeoutMs, path);
         if (find(v, "onFailure")) {
             e.onFailure = failurePolicy(str(v, "onFailure", "", path), childPath(path, "onFailure"));
         }
         e.screenshotOnFailure = boolean(v, "screenshotOnFailure", false, path);
+        e.maxStepExecutions = integer(v, "maxStepExecutions", e.maxStepExecutions, path);
         if (const json* r = find(v, "retry")) e.retry = readRetry(*r, childPath(path, "retry"));
         return e;
     }
@@ -273,11 +272,24 @@ private:
         return e;
     }
 
-    Step readStep(const json& v, const std::string& path) {
+    std::vector<Step> readSteps(const json& arr, const std::string& listPath, int depth) {
+        if (!arr.is_array()) throw ReadError{listPath, "must be an array"};
+        std::vector<Step> out;
+        out.reserve(arr.size());
+        for (size_t i = 0; i < arr.size(); ++i) {
+            out.push_back(readStep(arr[i], indexPath(listPath, i), depth));
+        }
+        return out;
+    }
+
+    Step readStep(const json& v, const std::string& path, int depth) {
         requireObject(v, path);
+        // 嵌套过深的文件在这里就拒绝：既防止递归爆栈，也和校验器的 kMaxNesting 保持一致
+        if (depth > kMaxNesting) throw ReadError{path, "blocks are nested too deeply (max " + std::to_string(kMaxNesting) + ")"};
         noteUnknown(v,
                     {"id", "type", "window", "locator", "text", "textFrom", "method", "sensitive",
-                     "mode", "keys", "durationMs", "timeoutMs", "expect", "retry", "onFailure"},
+                     "mode", "keys", "durationMs", "timeoutMs", "expect", "retry", "onFailure",
+                     "condition", "times", "maxIterations", "intervalMs", "then", "else", "body"},
                     path);
         Step s;
         s.id = str(v, "id", "", path);
@@ -320,6 +332,42 @@ private:
         if (const json* r = find(v, "retry")) s.retry = readRetry(*r, childPath(path, "retry"));
         if (find(v, "onFailure")) {
             s.onFailure = failurePolicy(str(v, "onFailure", "", path), childPath(path, "onFailure"));
+        }
+
+        // ---- 流程控制字段。只在对应的步骤类型上才有意义；放错地方的字段按"未知字段"报告，
+        // 而不是静默忽略（否则 "times" 写在 click 上会让人以为点了多次）。
+        const bool isIf = s.type == StepType::If;
+        const bool isRepeat = s.type == StepType::Repeat;
+        const bool isWhile = s.type == StepType::While;
+        auto misplaced = [&](const char* key) { wf_.unknownFields.push_back(childPath(path, key)); };
+
+        if (const json* c = find(v, "condition")) {
+            if (isIf || isWhile) s.condition = readExpect(*c, childPath(path, "condition"));
+            else misplaced("condition");
+        }
+        if (find(v, "times")) {
+            if (isRepeat) s.times = optInteger(v, "times", path);
+            else misplaced("times");
+        }
+        if (find(v, "maxIterations")) {
+            if (isWhile) s.maxIterations = optInteger(v, "maxIterations", path);
+            else misplaced("maxIterations");
+        }
+        if (find(v, "intervalMs")) {
+            if (isRepeat || isWhile) s.intervalMs = optInteger(v, "intervalMs", path);
+            else misplaced("intervalMs");
+        }
+        if (const json* t = find(v, "then")) {
+            if (isIf) s.body = readSteps(*t, childPath(path, "then"), depth + 1);
+            else misplaced("then");
+        }
+        if (const json* e = find(v, "else")) {
+            if (isIf) s.elseBody = readSteps(*e, childPath(path, "else"), depth + 1);
+            else misplaced("else");
+        }
+        if (const json* b = find(v, "body")) {
+            if (isRepeat || isWhile) s.body = readSteps(*b, childPath(path, "body"), depth + 1);
+            else misplaced("body");
         }
         return s;
     }
@@ -398,6 +446,21 @@ ojson writeLeaf(const LeafLocator& loc) {
     return j;
 }
 
+ojson writeStep(const Step& s);
+
+ojson writeSteps(const std::vector<Step>& steps) {
+    ojson arr = ojson::array();
+    for (const auto& c : steps) arr.push_back(writeStep(c));
+    return arr;
+}
+
+ojson writeExpect(const Expect& e) {
+    ojson j = ojson::object();
+    j["type"] = e.type;
+    j["locator"] = writeLocator(e.locator);
+    return j;
+}
+
 ojson writeStep(const Step& s) {
     ojson j = ojson::object();
     j["id"] = s.id;
@@ -418,14 +481,25 @@ ojson writeStep(const Step& s) {
     }
     if (s.durationMs) j["durationMs"] = *s.durationMs;
     if (s.timeoutMs) j["timeoutMs"] = *s.timeoutMs;
-    if (s.expect) {
-        ojson e = ojson::object();
-        e["type"] = s.expect->type;
-        e["locator"] = writeLocator(s.expect->locator);
-        j["expect"] = e;
-    }
+    if (s.expect) j["expect"] = writeExpect(*s.expect);
     if (s.retry) j["retry"] = writeRetry(*s.retry);
     if (s.onFailure) j["onFailure"] = policyName(*s.onFailure);
+
+    // 流程控制：只写出该类型用得到的字段，和读取时的规则对称
+    if ((s.type == StepType::If || s.type == StepType::While) && s.condition) {
+        j["condition"] = writeExpect(*s.condition);
+    }
+    if (s.type == StepType::Repeat && s.times) j["times"] = *s.times;
+    if (s.type == StepType::While && s.maxIterations) j["maxIterations"] = *s.maxIterations;
+    if ((s.type == StepType::Repeat || s.type == StepType::While) && s.intervalMs) {
+        j["intervalMs"] = *s.intervalMs;
+    }
+    if (s.type == StepType::If) {
+        j["then"] = writeSteps(s.body);
+        if (!s.elseBody.empty()) j["else"] = writeSteps(s.elseBody);
+    } else if (s.type == StepType::Repeat || s.type == StepType::While) {
+        j["body"] = writeSteps(s.body);
+    }
     return j;
 }
 
@@ -487,11 +561,12 @@ std::string writeWorkflow(const Workflow& wf, int indent) {
     exec["onFailure"] = policyName(wf.execution.onFailure);
     exec["screenshotOnFailure"] = wf.execution.screenshotOnFailure;
     exec["retry"] = writeRetry(wf.execution.retry);
+    if (wf.execution.maxStepExecutions != kDefaultMaxStepExecutions) {
+        exec["maxStepExecutions"] = wf.execution.maxStepExecutions;  // 默认值不写出，保持文件简洁
+    }
     j["execution"] = exec;
 
-    ojson steps = ojson::array();
-    for (const auto& s : wf.steps) steps.push_back(writeStep(s));
-    j["steps"] = steps;
+    j["steps"] = writeSteps(wf.steps);
 
     return j.dump(indent);
 }

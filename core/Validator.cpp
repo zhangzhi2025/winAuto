@@ -1,6 +1,7 @@
 #include "core/Validator.h"
 
 #include "core/ControlType.h"
+#include "core/StepTree.h"
 
 #include <algorithm>
 #include <cctype>
@@ -187,7 +188,74 @@ public:
         }
     }
 
-    void checkStep(const Workflow& wf, const Step& s, const std::string& path,
+    void checkSteps(const Workflow& wf, const std::vector<Step>& list, const std::string& listPath, int depth,
+                    std::set<std::string>& seenIds) {
+        for (size_t i = 0; i < list.size(); ++i) checkStep(wf, list[i], idx(listPath, i), depth, seenIds);
+    }
+
+    // if / while 的条件：element_exists（控件存在时成立）或 element_missing（控件不存在时成立）
+    void checkCondition(const Step& s, const std::string& path) {
+        const std::string cp = sub(path, "condition");
+        if (!s.condition) {
+            error(cp, "missing_field", std::string(toString(s.type)) + " requires a condition");
+            return;
+        }
+        if (s.condition->type != "element_exists" && s.condition->type != "element_missing") {
+            error(sub(cp, "type"), "unknown_condition_type",
+                  "unsupported condition type \"" + s.condition->type +
+                      "\"; use element_exists or element_missing");
+        }
+        checkLocator(s.condition->locator, sub(cp, "locator"));
+    }
+
+    void checkBlock(const Workflow& wf, const Step& s, const std::string& path, int depth,
+                    std::set<std::string>& seenIds) {
+        if (s.expect) {
+            error(sub(path, "expect"), "block_no_expect",
+                  std::string(toString(s.type)) + " does not take expect; put the check on a step inside it");
+        }
+        if (s.retry) {
+            error(sub(path, "retry"), "block_no_retry",
+                  std::string(toString(s.type)) + " does not take retry; retries belong on the steps inside it");
+        }
+        if (s.type == StepType::If || s.type == StepType::While) checkCondition(s, path);
+
+        if (s.type == StepType::Repeat) {
+            if (!s.times) {
+                error(sub(path, "times"), "missing_field", "repeat requires times");
+            } else {
+                range(*s.times, 1, kMaxLoopCount, sub(path, "times"), "times");
+            }
+        }
+        if (s.type == StepType::While) {
+            if (!s.maxIterations) {
+                error(sub(path, "maxIterations"), "missing_field",
+                      "while requires maxIterations (a hard upper bound; loops never run unbounded)");
+            } else {
+                range(*s.maxIterations, 1, kMaxLoopCount, sub(path, "maxIterations"), "maxIterations");
+            }
+        }
+        if (s.intervalMs) range(*s.intervalMs, 0, kMaxTimeoutMs, sub(path, "intervalMs"), "intervalMs");
+
+        if (depth + 1 > kMaxNesting) {
+            error(path, "nesting_too_deep",
+                  "blocks are nested too deeply (max " + std::to_string(kMaxNesting) + " levels)");
+            return;  // 不再往下查，避免病态输入造成过深递归
+        }
+        const char* bodyName = branchName(s.type, false);
+        if (s.body.empty()) {
+            warn(sub(path, bodyName), "empty_block",
+                 std::string(toString(s.type)) + " has no steps in " + bodyName);
+        }
+        checkSteps(wf, s.body, sub(path, bodyName), depth + 1, seenIds);
+        if (s.type == StepType::If) {
+            checkSteps(wf, s.elseBody, sub(path, "else"), depth + 1, seenIds);
+        } else if (!s.elseBody.empty()) {
+            error(sub(path, "else"), "children_not_allowed", "only if has an else branch");
+        }
+    }
+
+    void checkStep(const Workflow& wf, const Step& s, const std::string& path, int depth,
                    std::set<std::string>& seenIds) {
         if (s.id.empty()) {
             error(sub(path, "id"), "missing_field", "step id is required");
@@ -229,8 +297,10 @@ public:
                           "sensitive or prompted text must not go through the clipboard "
                           "(clipboard history and sync can store it)");
                 }
-                warn(sub(path, "method"), "unsupported_in_mvp",
-                     "clipboard input is not available yet and will fail at run time");
+                if (hasText && s.text->size() > kMaxClipboardBytes) {
+                    error(sub(path, "text"), "text_too_long",
+                          "clipboard text is limited to " + std::to_string(kMaxClipboardBytes / 1024) + " KiB");
+                }
             }
             if (hasText && s.textFromPrompt) {
                 error(path, "text_conflict", "text and textFrom=prompt cannot be used together");
@@ -252,7 +322,20 @@ public:
             }
         }
 
-        if (s.timeoutMs) range(*s.timeoutMs, 1, kMaxTimeoutMs, sub(path, "timeoutMs"), "timeoutMs");
+        // if / while 的 timeoutMs 是"等条件成立的最长时间"，0 表示只检查一次；其他步骤至少 1 ms
+        if (s.timeoutMs) {
+            const bool cond = s.type == StepType::If || s.type == StepType::While;
+            range(*s.timeoutMs, cond ? 0 : 1, kMaxTimeoutMs, sub(path, "timeoutMs"), "timeoutMs");
+        }
+
+        if (isBlockType(s.type)) {
+            checkBlock(wf, s, path, depth, seenIds);
+            return;
+        }
+        if (!s.body.empty() || !s.elseBody.empty()) {
+            error(path, "children_not_allowed",
+                  std::string(toString(s.type)) + " cannot contain steps; use if, repeat or while");
+        }
         if (s.retry) checkRetry(*s.retry, sub(path, "retry"));
         if (s.expect) {
             if (s.expect->type != "element_exists") {
@@ -370,8 +453,22 @@ ValidationReport validateWorkflow(const Workflow& wf) {
         c.error("steps", "empty_workflow", "workflow has no steps");
     }
     std::set<std::string> seenIds;
-    for (size_t i = 0; i < wf.steps.size(); ++i) {
-        c.checkStep(wf, wf.steps[i], idx("steps", i), seenIds);
+    c.checkSteps(wf, wf.steps, "steps", 0, seenIds);
+
+    c.range(wf.execution.maxStepExecutions, 1, kMaxStepExecutionsLimit, "execution.maxStepExecutions",
+            "maxStepExecutions");
+
+    // 失败截图会拍下目标窗口的内容。敏感文本输入之后窗口里可能显示着它（或它引出的内容），
+    // 所以引擎在第一个敏感/运行时询问的步骤执行之后就不再截图。提前说明，免得有人以为每次失败都有图。
+    if (wf.execution.screenshotOnFailure && report.errorCount() == 0) {
+        for (const StepRow& row : flattenSteps(wf)) {
+            if (row.step->sensitive || row.step->textFromPrompt) {
+                c.warn("execution.screenshotOnFailure", "screenshot_stops_after_sensitive",
+                       "failure screenshots stop after step \"" + row.step->id +
+                           "\" (sensitive or prompted text); later failures are not captured");
+                break;
+            }
+        }
     }
     return report;
 }

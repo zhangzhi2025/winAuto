@@ -12,8 +12,10 @@
 
 #ifdef WINAUTO_HAVE_PLATFORM
 #include "UiaSession.h"
+#include "Win32Clipboard.h"
 #include "Win32ImageLocator.h"
 #include "Win32InputController.h"
+#include "Win32Screenshot.h"
 #include "Win32StopHotkey.h"
 #include "Win32UiaLocator.h"
 #include "Win32WindowProvider.h"
@@ -58,6 +60,8 @@ void RunWorker::run() {
     wa::platform::Win32ImageLocator images(baseDir_);
     wa::platform::Win32UiaLocator locator(uia, &images);
     wa::platform::Win32InputController input(&uia);
+    wa::platform::Win32Clipboard clipboard;  // 剪贴板输入；和 COM 对象一样在工作线程里创建
+    wa::platform::Win32Screenshot screenshot;
     wa::SteadyClock clock;
 
     gate_.startPaused(startPaused_);
@@ -68,6 +72,8 @@ void RunWorker::run() {
     deps.locator = &locator;
     deps.input = &input;
     deps.clock = &clock;
+    deps.clipboard = &clipboard;
+    deps.screenshot = &screenshot;
     deps.beforeStep = [this](const wa::Step& s, size_t i) { return gate_.gate(s, i); };
     deps.prompt = [this](const wa::Step& s) -> wa::Result<std::string> {
         QString text;

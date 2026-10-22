@@ -18,6 +18,7 @@ enum class ErrCode {
     Cancelled,             // 被用户取消
     InputBlocked,          // 输入被系统或目标阻止
     Unsupported,           // 目标或平台不支持该操作
+    LimitExceeded,         // 循环或步骤执行次数超过上限
     Internal               // 内部错误
 };
 

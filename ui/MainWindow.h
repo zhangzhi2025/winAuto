@@ -10,6 +10,7 @@
 class QAction;
 class QLabel;
 class QListWidget;
+class QMenu;
 class QPlainTextEdit;
 class StepPanel;
 class RunController;
@@ -29,6 +30,10 @@ private slots:
     bool save();
     bool saveAs();
     void addStep(int type);
+    void addStepIntoBlock(int type, bool elseBranch);
+    void indentStep(bool intoElse);
+    void outdentStep();
+    void openScreenshotDir();
     void removeStep();
     void duplicateStep();
     void moveStep(int delta);
@@ -38,7 +43,8 @@ private slots:
     void redo();
     void onStepSelected();
     void onStepEdited(const wa::Step& step);
-    void onPickRequested(bool expect);
+    void onPickRequested(int target);
+    void onCaptureRequested(int target);
 
     void runAll();
     void runSelected();
@@ -69,7 +75,9 @@ private:
     bool startRun(bool paused, bool selectedOnly);
     bool confirmRun(const wa::Workflow& wf, bool& confirmedRisks);
     std::vector<std::string> windowAliases() const;
-    QString stepText(size_t index) const;
+    QString stepText(size_t row) const;
+    void selectStepId(const std::string& id);   // 结构编辑后按步骤 id 找回选中行
+    std::string startScreenshotDir() const;
 
     wa::WorkflowEditor editor_;
     QString filePath_;
@@ -86,6 +94,10 @@ private:
     QAction *actNew_ = nullptr, *actOpen_ = nullptr, *actSave_ = nullptr, *actSaveAs_ = nullptr;
     QAction *actUndo_ = nullptr, *actRedo_ = nullptr;
     QAction *actRemove_ = nullptr, *actDup_ = nullptr, *actUp_ = nullptr, *actDown_ = nullptr;
+    QAction *actIndent_ = nullptr, *actIndentElse_ = nullptr, *actOutdent_ = nullptr, *actShots_ = nullptr;
+    QMenu* addIntoMenu_ = nullptr;
+    QMenu* addElseMenu_ = nullptr;
+    std::string lastScreenshotDir_;  // 最近一次运行的失败截图目录
     QAction *actRunAll_ = nullptr, *actRunSel_ = nullptr, *actDebug_ = nullptr;
     QAction *actStep_ = nullptr, *actSkip_ = nullptr, *actPause_ = nullptr, *actResume_ = nullptr, *actStop_ = nullptr;
 };

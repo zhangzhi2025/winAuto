@@ -2,6 +2,8 @@
 
 #include <sstream>
 
+#include "core/StepTree.h"
+
 namespace wa {
 
 namespace {
@@ -67,23 +69,21 @@ std::string describeKeys(const std::vector<std::string>& keys) {
 
 }  // namespace
 
-std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report) {
-    std::ostringstream os;
-    os << "流程：" << wf.name << "（" << wf.id << "），共 " << wf.steps.size() << " 步\n\n";
+namespace {
 
-    os << "将操作的窗口：\n";
-    for (const auto& [alias, spec] : wf.windows) {
-        os << "  " << alias << " -> ";
-        if (!spec.processName.empty()) os << "进程 " << spec.processName;
-        if (!spec.titleContains.empty()) {
-            os << (spec.processName.empty() ? "" : "，") << "标题含 \"" << spec.titleContains << "\"";
-        }
-        os << "\n";
-    }
+std::string describeCondition(const Step& s) {
+    if (!s.condition) return "?";
+    std::string out = s.condition->type == "element_missing" ? "控件不存在 " : "控件存在 ";
+    out += describeLocator(s.condition->locator);
+    out += "（窗口 " + s.window;
+    if (s.timeoutMs && *s.timeoutMs > 0) out += "，最多等 " + std::to_string(*s.timeoutMs) + " ms";
+    return out + "）";
+}
 
-    os << "\n将执行的操作：\n";
-    for (const Step& s : wf.steps) {
-        os << "  " << s.id << "  ";
+void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int indent) {
+    const std::string pad(static_cast<size_t>(indent) * 4 + 2, ' ');
+    for (const Step& s : steps) {
+        os << pad << s.id << "  ";
         switch (s.type) {
             case StepType::ActivateWindow: os << "激活窗口 " << s.window; break;
             case StepType::Click:
@@ -92,6 +92,9 @@ std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report
             case StepType::SetValue:
             case StepType::InputText: {
                 os << (s.type == StepType::SetValue ? "设置值 " : "输入文本 ");
+                if (s.type == StepType::InputText && s.method == InputMethod::Clipboard) {
+                    os << "（通过剪贴板，会暂时覆盖剪贴板，输入后还原）";
+                }
                 if (s.textFromPrompt) os << "[运行时询问，不显示]";
                 else if (s.sensitive) os << "[已隐藏]";
                 else os << "\"" << truncateUtf8(s.text.value_or(""), 40) << "\"";
@@ -106,9 +109,50 @@ std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report
             case StepType::AssertElement:
                 os << "检查控件 " << (s.locator ? describeLocator(*s.locator) : "?");
                 break;
+            case StepType::If: os << "如果 " << describeCondition(s); break;
+            case StepType::Repeat: os << "重复 " << s.times.value_or(0) << " 次"; break;
+            case StepType::While:
+                os << "当 " << describeCondition(s) << " 时循环，最多 " << s.maxIterations.value_or(0) << " 次";
+                break;
             case StepType::Unknown: os << "未知操作 " << s.rawType; break;
         }
         os << "\n";
+        if (!s.body.empty()) describeSteps(os, s.body, indent + 1);
+        if (!s.elseBody.empty()) {
+            os << pad << "    否则：\n";
+            describeSteps(os, s.elseBody, indent + 1);
+        }
+    }
+}
+
+}  // namespace
+
+std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report) {
+    std::ostringstream os;
+    os << "流程：" << wf.name << "（" << wf.id << "），共 " << countSteps(wf.steps) << " 步\n\n";
+
+    os << "将操作的窗口：\n";
+    for (const auto& [alias, spec] : wf.windows) {
+        os << "  " << alias << " -> ";
+        if (!spec.processName.empty()) os << "进程 " << spec.processName;
+        if (!spec.titleContains.empty()) {
+            os << (spec.processName.empty() ? "" : "，") << "标题含 \"" << spec.titleContains << "\"";
+        }
+        os << "\n";
+    }
+
+    os << "\n将执行的操作：\n";
+    describeSteps(os, wf.steps, 0);
+
+    bool hasLoop = false;
+    for (const StepRow& r : flattenSteps(wf)) {
+        hasLoop = hasLoop || r.step->type == StepType::Repeat || r.step->type == StepType::While;
+    }
+    if (hasLoop) {
+        os << "\n循环保护：整个运行最多执行 " << wf.execution.maxStepExecutions << " 次步骤，超过即停止。\n";
+    }
+    if (wf.execution.screenshotOnFailure) {
+        os << "\n失败时会自动截取目标窗口的画面并保存为图片文件（遇到敏感文本步骤后不再截图）。\n";
     }
 
     bool anyRisk = false;

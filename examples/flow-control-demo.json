@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-FLOW-001",
+  "name": "流程控制与剪贴板示例（记事本）",
+  "windows": {
+    "main": {
+      "processName": "notepad.exe",
+      "titleContains": "",
+      "timeoutMs": 5000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": true,
+    "retry": {
+      "times": 0,
+      "intervalMs": 500
+    },
+    "maxStepExecutions": 200
+  },
+  "steps": [
+    {
+      "id": "S1",
+      "type": "activate_window",
+      "window": "main"
+    },
+    {
+      "id": "S2",
+      "type": "click",
+      "window": "main",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "15",
+        "controlType": "Edit",
+        "match": "exact",
+        "ambiguity": "error"
+      },
+      "mode": "auto"
+    },
+    {
+      "id": "S3",
+      "type": "repeat",
+      "times": 3,
+      "intervalMs": 200,
+      "body": [
+        {
+          "id": "S4",
+          "type": "input_text",
+          "window": "main",
+          "text": "第一行\n第二行\n",
+          "method": "clipboard",
+          "sensitive": false
+        },
+        {
+          "id": "S5",
+          "type": "hotkey",
+          "window": "main",
+          "keys": [
+            "CTRL",
+            "END"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "type": "if",
+      "window": "main",
+      "timeoutMs": 1000,
+      "condition": {
+        "type": "element_exists",
+        "locator": {
+          "strategy": "uia",
+          "automationId": "15",
+          "controlType": "Edit",
+          "match": "exact",
+          "ambiguity": "error"
+        }
+      },
+      "then": [
+        {
+          "id": "S7",
+          "type": "input_text",
+          "window": "main",
+          "text": "编辑区存在",
+          "method": "unicode",
+          "sensitive": false
+        }
+      ],
+      "else": [
+        {
+          "id": "S8",
+          "type": "hotkey",
+          "window": "main",
+          "keys": [
+            "CTRL",
+            "N"
+          ]
+        }
+      ]
+    }
+  ]
+}

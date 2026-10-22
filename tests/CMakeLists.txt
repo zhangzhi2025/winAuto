@@ -12,6 +12,8 @@ set(WINAUTO_TEST_SOURCES
     test_debug_gate.cpp
     test_template_match.cpp
     test_path_safety.cpp
+    test_flow_control.cpp
+    test_template_assess.cpp
 )
 
 foreach(src ${WINAUTO_TEST_SOURCES})
@@ -33,7 +35,8 @@ add_test(NAME cli_validate_examples
     COMMAND winauto-cli validate ${CMAKE_SOURCE_DIR}/examples/notepad-demo.json
                                  ${CMAKE_SOURCE_DIR}/examples/fallback-prompt-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/notepad-coordinates-demo.json
-                ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json)
+                ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json
+                ${CMAKE_SOURCE_DIR}/examples/flow-control-demo.json)
 add_test(NAME cli_rejects_invalid_workflow
     COMMAND winauto-cli validate ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/invalid-empty.json)
 set_tests_properties(cli_rejects_invalid_workflow PROPERTIES WILL_FAIL TRUE)
@@ -47,6 +50,7 @@ if(Python3_Interpreter_FOUND)
                 ${CMAKE_SOURCE_DIR}/examples/notepad-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/fallback-prompt-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/notepad-coordinates-demo.json
-                ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json)
+                ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json
+                ${CMAKE_SOURCE_DIR}/examples/flow-control-demo.json)
     set_tests_properties(schema_examples PROPERTIES SKIP_RETURN_CODE 77)
 endif()

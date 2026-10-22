@@ -5,6 +5,7 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/Interfaces.h"
@@ -102,8 +103,10 @@ struct FakeInputController : IInputController {
     std::vector<std::string> actions;
     std::function<Status(const std::string& action)> hook;  // 返回失败则模拟该动作失败
 
+    std::vector<std::string>* trace = nullptr;  // 可选：同时写入共享时间线
     Status record(const std::string& a) {
         actions.push_back(a);
+        if (trace) trace->push_back(a);
         return hook ? hook(a) : okStatus();
     }
     std::uint64_t lastClickWindow = 0;
@@ -122,6 +125,44 @@ struct FakeInputController : IInputController {
         std::string s = "hotkey:";
         for (size_t i = 0; i < keys.size(); ++i) s += (i ? "+" : "") + keys[i];
         return record(s);
+    }
+};
+
+struct FakeScreenshot : IScreenshot {
+    std::vector<std::pair<std::uint64_t, std::string>> shots;
+    Status result = okStatus();
+    Status captureWindow(std::uint64_t h, const std::string& path) override {
+        shots.emplace_back(h, path);
+        return result;
+    }
+};
+
+// 记录调用顺序，用来验证"替换 → 粘贴 → 还原"
+struct FakeClipboard : IClipboard {
+    std::vector<std::string>* trace = nullptr;  // 与 FakeInputController 共用时间线
+    std::string content = "ORIGINAL";
+    std::string saved;
+    bool replaced = false;
+    Status replaceResult = okStatus();
+    Status restoreResult = okStatus();
+    int replaceCalls = 0, restoreCalls = 0;
+
+    Status replaceText(const std::string& t) override {
+        ++replaceCalls;
+        if (trace) trace->push_back("clip:set:" + t);
+        if (!replaceResult.ok()) return replaceResult;
+        saved = content;
+        content = t;
+        replaced = true;
+        return okStatus();
+    }
+    Status restore() override {
+        ++restoreCalls;
+        if (trace) trace->push_back("clip:restore");
+        if (!restoreResult.ok()) return restoreResult;
+        if (replaced) content = saved;
+        replaced = false;
+        return okStatus();
     }
 };
 

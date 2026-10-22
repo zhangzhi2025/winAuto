@@ -1,7 +1,8 @@
 #pragma once
 // core 与平台之间的 4 个接口。只在需要替身（Fake）的地方设接口：
 //   IWindowProvider / IElementLocator / IInputController / IClock
-// 这些接口的真实实现位于 platform_win/（阶段 1 起）。
+// 另有两个可选的小接口：IScreenshot（失败截图）、IClipboard（剪贴板输入）。
+// 这些接口的真实实现位于 platform_win/。
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -65,6 +66,25 @@ public:
     virtual Status setValue(const ElementRef& element, const std::string& text) = 0;
     virtual Status typeText(const std::string& text, InputMethod method) = 0;
     virtual Status hotkey(const std::vector<std::string>& normalizedKeys) = 0;
+};
+
+// 失败截图。只截目标窗口所在的屏幕区域（所见即所得，能拍到盖在上面的弹窗），不截整个桌面。
+class IScreenshot {
+public:
+    virtual ~IScreenshot() = default;
+    // 把窗口所在的屏幕区域存为 PNG；目录不存在则创建。失败不影响流程结果，调用方只记日志。
+    virtual Status captureWindow(std::uint64_t windowHandle, const std::string& pngPath) = 0;
+};
+
+// 剪贴板输入用：把剪贴板临时换成要输入的文本，粘贴后还原。
+class IClipboard {
+public:
+    virtual ~IClipboard() = default;
+    // 保存当前剪贴板内容，再写入 utf8 文本。实现应标记为"不进入剪贴板历史、不同步到云"。
+    // 同一时间只允许一次进行中的替换（再次调用前必须 restore）。
+    virtual Status replaceText(const std::string& utf8) = 0;
+    // 还原 replaceText 之前的内容。若剪贴板此后已被别的程序/用户改动，则不覆盖，返回 Ok 并在 detail 里说明。
+    virtual Status restore() = 0;
 };
 
 class IClock {

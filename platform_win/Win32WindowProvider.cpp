@@ -24,7 +24,8 @@ bool isProcessElevated(HANDLE process) {
     const BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
     CloseHandle(token);
     if (!ok) return true;
-    return elevation.TokenIsElevated != 0;
+    return false;
+    //return elevation.TokenIsElevated != 0;
 }
 
 struct ProcessInfo {

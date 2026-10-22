@@ -13,6 +13,7 @@
 | 3 UIA 定位 | ✅ Windows 编译通过 | 运行时行为按 `tests/manual/stage3-windows-checklist.md` 验证；控件树快照 + core 匹配/诊断/定位建议；`inspect` / `pick` |
 | 4 流程编辑器 UI | ✅ 已在 Windows 验证 | 步骤列表/属性面板/窗口选择/控件拾取/单步调试/运行日志 |
 | 5 图像识别 | 🟡 代码完成，待 Windows 编译与验证 | 灰度 ZNCC 模板匹配（core，已测试）+ GDI 截屏 + WIC 读图；`shot` / `find-image` 命令；清单见 `tests/manual/stage5-windows-checklist.md` |
+| 6 截取模板 / 失败截图 / 剪贴板输入 / 条件与循环 | 🟡 代码完成，待 Windows 编译与验证 | 界面"截取模板"按钮 + core 模板评估；失败时截取目标窗口；剪贴板粘贴（备份/还原/不进历史）；`if` / `repeat` / `while`；清单见 `tests/manual/stage6-windows-checklist.md` |
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
 
@@ -172,23 +173,51 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 命令：`shot <进程> [标题] --out <file.png> [--region x,y,w,h]` 截模板；`find-image <进程> [标题] <模板.png> [--min 0.9] [--region x,y,w,h] [--first]` 试匹配并给出得分和窗口内坐标。
 - 性能：模板较大时先在下采样图上搜索（对网格相位各做一份模板再精修），1080p 全窗口搜索 40x40 模板约 0.15 秒（容器内 Release）。
 
+## 阶段 6 约定
+
+**条件与循环**（流程 JSON 里的块语句，可嵌套，最多 8 层）
+- `if`：`condition` 成立执行 `then`，否则执行 `else`（可省略）。`while`：每轮先判断条件，成立才执行 `body`。`repeat`：固定 `times` 次。
+- 条件 `type`：`element_exists`（控件存在时成立）/ `element_missing`（不存在时成立），定位器和普通步骤一样（含 fallback、图像）。
+  `timeoutMs>0` 表示最多等这么久让条件**变为成立**，超时按"不成立"处理；缺省只检查一次。
+- **条件里定位出错不等于不存在**：歧义、窗口丢失、策略不可用都会让该块失败，不会悄悄走 else。
+- `while` 必须写 `maxIterations`（≤1000）：跑满后条件仍成立 → `LimitExceeded` 失败，绝不无限循环。`intervalMs` 是每轮间隔，缺省 100 ms。
+- 整个运行另有总量保护 `execution.maxStepExecutions`（缺省 10000，含块语句本身和循环里的每一次），超过即 `LimitExceeded`，**不受 onFailure 影响**。
+- 块语句不支持 `expect` / `retry`（放在块内的步骤上）；`onFailure` 对块本身有效。步骤 id 在整个流程里唯一（含嵌套）。
+- 运行范围、调试闸门、界面列表使用同一套**先序行号**（父步骤 → then/body → else）。只运行选中的嵌套步骤时，忽略外层条件与循环。
+- 运行记录 `StepRecord.path` 形如 `S3#2/S4`（S3 循环第 2 轮里的 S4）；块语句的记录排在它的子步骤之前。
+
+**失败自动截图**
+- 需要同时满足：`execution.screenshotOnFailure=true`、调用方给了目录（界面：流程旁 `screenshots/<时间戳>/`；CLI：`--screenshot-dir`，缺省同界面）。
+- 只截**目标窗口所在的屏幕区域**（所见即所得，能拍到盖在上面的弹窗），不截整个桌面；文件名 `fail-001-<步骤id>.png`；一次运行最多 20 张。
+- **执行过敏感/运行时询问的步骤之后不再截图**（窗口里可能显示着内容）；校验器会给出提示。截图失败只记日志，不改变步骤结果。
+- 截图是明文图片文件，可能含窗口里的任何信息；分享流程目录前请检查 `screenshots/`。
+
+**剪贴板输入**（`input_text` 的 `method: "clipboard"`）
+- 流程：保存剪贴板全部格式 → 写入文本（标记为不进入 Win+V 历史、不同步云剪贴板）→ 发送 Ctrl+V → 等 250 ms → 还原。还原一定执行（含失败、取消）。
+- 若等待期间剪贴板已被别的程序/用户改动，则**不覆盖**，只记一条日志。无法无损保存的格式（如延迟渲染的句柄）会在日志里说明。
+- 敏感/运行时询问文本**禁止**走剪贴板（`sensitive_clipboard`）；文本上限 1 MiB。目标程序的粘贴快捷键不是 Ctrl+V（如部分终端）时不适用。
+
+**截取模板按钮**（属性面板的定位器 / expect / 条件旁）
+- 先把本程序窗口隐藏、目标窗口切到前台并截取其 client 区域，再在截图上拖拽选区。保存前由 core 的评估器自检：纯色、太小、窗口内出现多处都会提示。
+- 模板存为流程文件旁的 `templates/<步骤id>-N.png`（因此流程需要先保存）；自动填入 `image` 定位器，可勾选"限定搜索范围"生成 `searchRegion`。
+
 ## 已知限制
 
 0. 弹出菜单、下拉框是独立顶层窗口：UIA 定位只读取目标窗口自己的控件树，读不到它们；坐标点击也会因"不在目标窗口上"被拒绝。需要时可把弹出窗口配成另一个窗口别名（用 titleContains 区分）。
-   剪贴板输入未实现（`Unsupported`）。一次性发送的长文本无法中途取消。
+   一次性发送的长文本无法中途取消。
 1. **重试会重新执行动作本身。** 对 `input_text` 配置 `expect` + `retry` 时，若校验失败，文本会被再输入一次。
    对有副作用的动作，请谨慎配置重试。
 2. **步骤超时无法抢占阻塞中的平台调用。** 引擎在等待和轮询处响应取消与超时；一次卡死的 UIA / Win32 调用需要平台层自己设置超时（阶段 1/3 处理）。
-3. 图像定位依赖屏幕像素：主题/缩放/字体变化会使模板失效；窗口被遮挡时找不到。UI 里暂时只能在定位器 JSON 中编辑它，截取模板请用 `shot` 命令。
-4. `screenshotOnFailure` 字段已进入模型，截图本身尚未实现。
-5. **阶段 5 的 `platform_win/`（截屏、WIC 读图、图像定位）和 CLI 的 `shot` / `find-image` 尚未在 Windows 上编译或运行**（开发环境是 Linux 容器），只用手写的 GDI/WIC 桩做过语法检查；阶段 1–4 的 Windows 部分已由你编译/验证。
+3. 图像定位依赖屏幕像素：主题/缩放/字体变化会使模板失效；窗口被遮挡时找不到。
+4. 条件目前只有"控件存在/不存在"两种；没有变量、比较和 break/continue。`while` 条件超出上限一律判失败（暂无"到上限就正常退出"的选项）。
+5. **阶段 5、6 的 Windows 代码（截屏、WIC 读图、图像定位、剪贴板、失败截图、截取模板对话框及界面改动）尚未在 Windows 上编译或运行**（开发环境是 Linux 容器），只用手写的 GDI/WIC 桩做过语法检查；阶段 1–4 的 Windows 部分已由你编译/验证。
    core、cli（非 Windows 分支）、测试已在 GCC 13 / clang 下通过，含 ASan / UBSan / TSan，`-Werror` 零警告。
 6. 示例里的控件 `automationId` 只用于演示，必须用实际窗口探测确认；不同版本的记事本控件树不同。
 
 ## 测试
 
 ```
-test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan / test_uia_match / test_editor / test_debug_gate
+test_errcode / test_json / test_validator / test_state_cancel / test_logger / test_engine / test_window_hotkey / test_input_plan / test_uia_match / test_editor / test_debug_gate / test_template_match / test_path_safety / test_flow_control / test_template_assess
 core_purity            core/ 不得引用 Win32 / COM / Qt 头文件
 cli_validate_examples  CLI 冒烟
 schema_examples        Schema 校验示例（需要 Python + jsonschema，没有则自动跳过）

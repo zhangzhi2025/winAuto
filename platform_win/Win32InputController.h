@@ -16,6 +16,7 @@ class Win32InputController : public IInputController {
 public:
     explicit Win32InputController(UiaSession* uia = nullptr) : uia_(uia) {}
     Status clickPoint(Point screenPoint, std::uint64_t windowHandle) override;
+    Status movePoint(Point screenPoint, std::uint64_t windowHandle) override;
     Status invoke(const ElementRef& element) override;
     Status setValue(const ElementRef& element, const std::string& text) override;
     Status typeText(const std::string& text, InputMethod method) override;

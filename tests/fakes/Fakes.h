@@ -114,6 +114,9 @@ struct FakeInputController : IInputController {
         lastClickWindow = windowHandle;
         return record("click:" + std::to_string(p.x) + "," + std::to_string(p.y));
     }
+    Status movePoint(Point p, std::uint64_t) override {
+        return record("move:" + std::to_string(p.x) + "," + std::to_string(p.y));
+    }
     Status invoke(const ElementRef& e) override { return record("invoke:" + e.name); }
     Status setValue(const ElementRef& e, const std::string& text) override {
         return record("setValue:" + e.name + ":" + text);

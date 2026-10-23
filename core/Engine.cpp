@@ -216,6 +216,16 @@ struct WorkflowEngine::Run {
                 return deps.input->clickPoint(r.value.bounds.center(), handle);
             }
 
+            case StepType::MouseMove:
+            case StepType::MouseClick: {
+                const bool click = s.type == StepType::MouseClick;
+                Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
+                                                     ErrCode::ElementNotFound, click);
+                if (!r.ok()) return failAs<Unit>(r);
+                const Point point = r.value.bounds.center();
+                return click ? deps.input->clickPoint(point, handle) : deps.input->movePoint(point, handle);
+            }
+
             case StepType::SetValue: {
                 Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
                                                      ErrCode::ElementNotFound, true);

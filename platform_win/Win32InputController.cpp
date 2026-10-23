@@ -50,13 +50,11 @@ INPUT mouseEvent(LONG dx, LONG dy, DWORD flags) {
 
 HWND toHwnd(std::uint64_t handle) { return reinterpret_cast<HWND>(static_cast<UINT_PTR>(handle)); }
 
-}  // namespace
-
-Status Win32InputController::clickPoint(Point p, std::uint64_t windowHandle) {
+Status prepareMousePoint(Point p, std::uint64_t windowHandle, AbsoluteMouse* absolute) {
     if (!isPerMonitorV2Aware()) {
         return Status::failure(ErrCode::Internal,
                                "process is not Per-Monitor V2 DPI aware (Windows 10 1703+ required); "
-                               "click coordinates would be wrong");
+                               "mouse coordinates would be wrong");
     }
 
     if (windowHandle != 0) {
@@ -66,16 +64,24 @@ Status Win32InputController::clickPoint(Point p, std::uint64_t windowHandle) {
         if (root != toHwnd(windowHandle)) {
             return Status::failure(ErrCode::InputBlocked,
                                    "the point is not on the target window (covered by another window, "
-                                   "a popup, or outside it); refusing to click");
+                                   "a popup, or outside it); refusing mouse input");
         }
     }
 
     const Rect vs = virtualScreenRect();
     if (vs.w <= 0 || vs.h <= 0) {
-        // GetSystemMetrics 失败时会返回 0；此时换算只能得到 (0,0)，宁可拒绝也不点屏幕角落
         return Status::failure(ErrCode::Internal, "cannot determine the virtual screen size");
     }
-    const AbsoluteMouse m = toAbsoluteMouse(p, vs);
+    *absolute = toAbsoluteMouse(p, vs);
+    return okStatus();
+}
+
+}  // namespace
+
+Status Win32InputController::clickPoint(Point p, std::uint64_t windowHandle) {
+    AbsoluteMouse m;
+    Status prepared = prepareMousePoint(p, windowHandle, &m);
+    if (!prepared.ok()) return prepared;
     constexpr DWORD kAbs = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
 
     // 先移动，等指针到位再按下；一并发送时部分程序会在旧位置收到点击
@@ -87,6 +93,15 @@ Status Win32InputController::clickPoint(Point p, std::uint64_t windowHandle) {
     std::vector<INPUT> click = {mouseEvent(m.x, m.y, MOUSEEVENTF_LEFTDOWN | kAbs),
                                 mouseEvent(m.x, m.y, MOUSEEVENTF_LEFTUP | kAbs)};
     return sendAll(click);
+}
+
+Status Win32InputController::movePoint(Point p, std::uint64_t windowHandle) {
+    AbsoluteMouse m;
+    Status prepared = prepareMousePoint(p, windowHandle, &m);
+    if (!prepared.ok()) return prepared;
+    constexpr DWORD kAbs = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+    std::vector<INPUT> move = {mouseEvent(m.x, m.y, MOUSEEVENTF_MOVE | kAbs)};
+    return sendAll(move);
 }
 
 Status Win32InputController::invoke(const ElementRef& element) {

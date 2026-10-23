@@ -56,6 +56,8 @@ winauto-cli run examples\notepad-coordinates-demo.json
 winauto-cli run flow.json --yes --confirm-risks --hotkey ctrl+alt+f9
 ```
 
+鼠标脚本示例见 `examples\mouse-demo.json`；`mouse_move` 与 `mouse_click` 步骤需要指定窗口别名和定位器，可通过 `winauto-cli validate` 校验、`winauto-cli run` 执行。
+
 `run` 的流程：校验 → 展示**信任摘要**（目标程序、将输入的文本、将按的键；敏感文本不显示）→ 要求输入 `yes` 确认
 （含高风险操作时还要输入 `RISK`）→ 注册紧急停止热键（**注册失败则拒绝运行**）→ 执行 → 汇总结果。
 
@@ -96,6 +98,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - `windows` 是别名表，步骤用 `window` 引用别名，因此支持多窗口流程。
 - 定位策略字面值：`uia`、`window_point`、`screen_point`、`image`、`fallback`。
 - `window_point` 基准是窗口 **client 区域**，物理像素；`anchor` 可选 `top_left`（默认）、`bottom_right`、`ratio`（0..1 比例）。
+- 脚本专用鼠标动作：`mouse_move` 只移动指针，`mouse_click` 强制移动并真实单击；两者都用 `locator` 指定落点，可用 `window_point`、`screen_point`、UIA 或 image 定位器。它们由 `winauto-cli run` 执行，落点被其他窗口遮挡时拒绝操作；`mouse_click` 不走 UIA Invoke。
 - `fallback` 只在 `ElementNotFound` 时进入下一个定位器；`ElementAmbiguous` 直接失败。fallback 不能嵌套。
 - 敏感文本：`"textFrom": "prompt"` 表示运行时询问，不写入文件；`"sensitive": true` 的文本在日志与报告中脱敏。
 - `input_text.method` 为 `unicode`（默认）或 `clipboard`。通过 UIA ValuePattern 写值是独立的 `set_value` 动作。

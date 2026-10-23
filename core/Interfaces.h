@@ -62,6 +62,8 @@ public:
     // windowHandle：点击必须落在该窗口上。实现需确认落点处最上层的窗口属于它（防止被其他窗口遮挡时误点）；
     // 为 0 表示不检查。
     virtual Status clickPoint(Point screenPoint, std::uint64_t windowHandle) = 0;
+    // Moves the pointer only; when windowHandle is nonzero, the point must belong to that window.
+    virtual Status movePoint(Point screenPoint, std::uint64_t windowHandle) = 0;
     virtual Status invoke(const ElementRef& element) = 0;
     virtual Status setValue(const ElementRef& element, const std::string& text) = 0;
     virtual Status typeText(const std::string& text, InputMethod method) = 0;

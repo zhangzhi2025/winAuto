@@ -183,6 +183,40 @@ TEST(click_point_mode_ignores_invoke_support) {
     CHECK_EQ(env.input.actions[0], "click:120,210");
 }
 
+TEST(mouse_move_moves_pointer_without_clicking_and_mouse_click_forces_pointer_click) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("target", true); };
+    Step move = step("M1", StepType::MouseMove);
+    move.locator = Locator{WindowPointLocator{20, 30, Anchor::TopLeft}};
+    Step click = step("M2", StepType::MouseClick);
+    click.locator = Locator{uia("button", "Button")};
+
+    RunReport r = env.run(flow({move, click}));
+
+    CHECK(r.state == ExecutionState::Succeeded);
+    CHECK(env.input.actions == std::vector<std::string>({"move:120,210", "click:120,210"}));
+    CHECK_EQ(env.input.lastClickWindow, std::uint64_t(1));
+}
+
+TEST(mouse_click_waits_for_disabled_elements_but_mouse_move_does_not) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int idx) {
+        ElementRef e = FakeElementLocator::element("target");
+        e.enabled = idx >= 2;
+        return Result<ElementRef>::success(e);
+    };
+    Step move = step("M1", StepType::MouseMove);
+    move.locator = Locator{uia("target", "Button")};
+    Step click = step("M2", StepType::MouseClick);
+    click.locator = Locator{uia("target", "Button")};
+
+    RunReport r = env.run(flow({move, click}));
+
+    CHECK(r.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.locator.calls.size(), size_t(3));
+    CHECK_EQ(env.input.actions.size(), size_t(2));
+}
+
 TEST(wait_for_element_times_out_with_timeout_code) {
     Env env;
     Step w = step("S1", StepType::WaitForElement);

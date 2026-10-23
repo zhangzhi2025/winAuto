@@ -87,6 +87,15 @@ TEST(click_requires_locator) {
     CHECK(check(withStep(s)).find("locator_required", "steps[1].locator") != nullptr);
 }
 
+TEST(mouse_actions_require_locators) {
+    for (StepType type : {StepType::MouseMove, StepType::MouseClick}) {
+        Step s = step("S2", type);
+        CHECK(check(withStep(s)).find("locator_required", "steps[1].locator") != nullptr);
+        s.locator = Locator{WindowPointLocator{10, 20, Anchor::TopLeft}};
+        CHECK(check(withStep(s)).ok());
+    }
+}
+
 TEST(uia_locator_without_any_condition_is_rejected) {
     Step s = step("S2", StepType::Click);
     s.locator = Locator{UiaLocator{}};

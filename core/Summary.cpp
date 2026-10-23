@@ -89,6 +89,12 @@ void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int i
             case StepType::Click:
                 os << "点击 " << (s.locator ? describeLocator(*s.locator) : "?");
                 break;
+            case StepType::MouseMove:
+                os << "移动鼠标到 " << (s.locator ? describeLocator(*s.locator) : "?");
+                break;
+            case StepType::MouseClick:
+                os << "鼠标单击 " << (s.locator ? describeLocator(*s.locator) : "?");
+                break;
             case StepType::SetValue:
             case StepType::InputText: {
                 os << (s.type == StepType::SetValue ? "设置值 " : "输入文本 ");

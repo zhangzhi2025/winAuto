@@ -378,6 +378,8 @@
           "enum": [
             "activate_window",
             "click",
+            "mouse_move",
+            "mouse_click",
             "set_value",
             "input_text",
             "hotkey",
@@ -549,6 +551,8 @@
               "type": {
                 "enum": [
                   "click",
+                  "mouse_move",
+                  "mouse_click",
                   "set_value",
                   "wait_for_element",
                   "assert_element"

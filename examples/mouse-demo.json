@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-MOUSE-DEMO",
+  "name": "Mouse move and click demo",
+  "windows": {
+    "main": {
+      "processName": "notepad.exe",
+      "titleContains": "",
+      "timeoutMs": 5000
+    }
+  },
+  "execution": {
+    "stepTimeoutMs": 5000,
+    "onFailure": "stop",
+    "screenshotOnFailure": false,
+    "retry": {
+      "times": 0,
+      "intervalMs": 500
+    }
+  },
+  "steps": [
+    {
+      "id": "M1",
+      "type": "activate_window",
+      "window": "main"
+    },
+    {
+      "id": "M2",
+      "type": "mouse_move",
+      "window": "main",
+      "locator": {
+        "strategy": "window_point",
+        "x": 0.5,
+        "y": 0.5,
+        "anchor": "ratio"
+      }
+    },
+    {
+      "id": "M3",
+      "type": "mouse_click",
+      "window": "main",
+      "locator": {
+        "strategy": "window_point",
+        "x": 0.5,
+        "y": 0.5,
+        "anchor": "ratio"
+      }
+    }
+  ]
+}

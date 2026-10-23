@@ -33,6 +33,12 @@
 - [ ] 终端逐步输出 `A1 ... ok`，最后 `完成：全部 5 步成功`，退出码 0。
 - [ ] 换行是真实的换行（不是方块字符）。
 
+## 3.1 脚本鼠标移动与单击
+- [ ] 用 `examples\mouse-demo.json` 运行 `cli validate`，流程应通过。
+- [ ] 在空白记事本上运行 `cli run examples\mouse-demo.json --yes`：鼠标先移动到窗口中心，再由 `mouse_click` 执行真实单击。
+- [ ] 用鼠标移到其他窗口遮住目标坐标后运行，步骤应报 `InputBlocked`，不应把鼠标操作投递到遮挡窗口。
+- [ ] `mouse_move` 只移动指针，不产生单击；`mouse_click` 不使用 UIA Invoke。
+
 ## 4. 安全拒绝（最重要）
 - [ ] **前台校验**：去掉 A1（activate），让别的窗口在前台，运行 → A4 报 `InputBlocked ... not in the foreground`，
   **没有任何字符被输入到别的窗口**。

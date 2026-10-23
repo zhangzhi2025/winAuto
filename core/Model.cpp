@@ -23,6 +23,8 @@ const char* toString(StepType t) {
     switch (t) {
         case StepType::ActivateWindow: return "activate_window";
         case StepType::Click: return "click";
+        case StepType::MouseMove: return "mouse_move";
+        case StepType::MouseClick: return "mouse_click";
         case StepType::SetValue: return "set_value";
         case StepType::InputText: return "input_text";
         case StepType::Hotkey: return "hotkey";
@@ -39,6 +41,7 @@ const char* toString(StepType t) {
 
 StepType parseStepType(const std::string& s) {
     static const StepType all[] = {StepType::ActivateWindow, StepType::Click,
+                                   StepType::MouseMove,       StepType::MouseClick,
                                    StepType::SetValue,       StepType::InputText,
                                    StepType::Hotkey,         StepType::Wait,
                                    StepType::WaitForElement, StepType::AssertElement,
@@ -54,12 +57,12 @@ bool isBlockType(StepType t) { return t == StepType::If || t == StepType::Repeat
 
 // repeat 不操作任何窗口；if / while 的条件要在某个窗口里定位控件
 bool requiresWindow(StepType t) {
-    return t != StepType::Wait && t != StepType::Repeat && t != StepType::Unknown;
+    return t != StepType::Wait && t != StepType::Repeat && t != StepType::Unknown&& t!=StepType::MouseMove && t!= StepType::MouseClick;
 }
 
 bool requiresLocator(StepType t) {
-    return t == StepType::Click || t == StepType::SetValue || t == StepType::WaitForElement ||
-           t == StepType::AssertElement;
+    return t == StepType::Click || t == StepType::MouseMove || t == StepType::MouseClick ||
+           t == StepType::SetValue || t == StepType::WaitForElement || t == StepType::AssertElement;
 }
 
 }  // namespace wa

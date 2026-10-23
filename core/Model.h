@@ -87,6 +87,8 @@ enum class StepType {
     Unknown,  // 读入了未知类型，保留原文由校验器拒绝
     ActivateWindow,
     Click,
+    MouseMove,
+    MouseClick,
     SetValue,
     InputText,
     Hotkey,

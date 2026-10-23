@@ -35,7 +35,8 @@ TEST(reads_notepad_example) {
 }
 
 TEST(examples_pass_the_validator) {
-    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json"}) {
+    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json",
+                             "mouse-demo.json"}) {
         Workflow wf = mustRead(testutil::exampleText(name));
         auto report = validateWorkflow(wf);
         CHECK(report.ok());
@@ -46,7 +47,8 @@ TEST(examples_pass_the_validator) {
 }
 
 TEST(read_write_roundtrip_matches_original_json) {
-    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json"}) {
+    for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json",
+                             "mouse-demo.json"}) {
         const std::string text = testutil::exampleText(name);
         Workflow wf = mustRead(text);
         const std::string out = writeWorkflow(wf);
@@ -55,6 +57,41 @@ TEST(read_write_roundtrip_matches_original_json) {
         // 二次读写稳定
         Workflow wf2 = mustRead(out);
         CHECK_EQ(writeWorkflow(wf2), out);
+    }
+}
+
+TEST(mouse_script_steps_read_write_and_validate) {
+    const std::string text = R"({
+      "schemaVersion":"1.0","id":"mouse","name":"Mouse script",
+      "windows":{"main":{"processName":"notepad.exe"}},
+      "steps":[
+        {"id":"M1","type":"mouse_move","window":"main",
+         "locator":{"strategy":"window_point","x":0.5,"y":0.5,"anchor":"ratio"}},
+        {"id":"M2","type":"mouse_click","window":"main",
+         "locator":{"strategy":"screen_point","x":10,"y":20}}
+      ]
+    })";
+    Workflow wf = mustRead(text);
+    CHECK(wf.steps[0].type == StepType::MouseMove);
+    CHECK(wf.steps[1].type == StepType::MouseClick);
+    CHECK(validateWorkflow(wf).ok());
+    Workflow again = mustRead(writeWorkflow(wf));
+    CHECK(again.steps[0].type == StepType::MouseMove);
+    CHECK(again.steps[1].type == StepType::MouseClick);
+    CHECK(again.steps[0].locator.has_value());
+    CHECK(again.steps[1].locator.has_value());
+    const auto* movePoint = std::get_if<WindowPointLocator>(&*again.steps[0].locator);
+    const auto* clickPoint = std::get_if<ScreenPointLocator>(&*again.steps[1].locator);
+    CHECK(movePoint != nullptr);
+    CHECK(clickPoint != nullptr);
+    if (movePoint) {
+        CHECK(movePoint->anchor == Anchor::Ratio);
+        CHECK_EQ(movePoint->x, 0.5);
+        CHECK_EQ(movePoint->y, 0.5);
+    }
+    if (clickPoint) {
+        CHECK_EQ(clickPoint->x, 10);
+        CHECK_EQ(clickPoint->y, 20);
     }
 }
 

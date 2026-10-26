@@ -121,6 +121,9 @@ struct WindowSpec {
     std::string processName;
     std::string titleContains;
     int timeoutMs = 5000;
+    std::optional<std::uint32_t> processId;
+    std::optional<int> width;
+    std::optional<int> height;
 };
 
 struct Step;

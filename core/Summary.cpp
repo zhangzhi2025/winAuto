@@ -140,9 +140,17 @@ std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report
     os << "将操作的窗口：\n";
     for (const auto& [alias, spec] : wf.windows) {
         os << "  " << alias << " -> ";
-        if (!spec.processName.empty()) os << "进程 " << spec.processName;
+        bool hasCondition = false;
+        if (!spec.processName.empty()) {
+            os << "进程 " << spec.processName;
+            hasCondition = true;
+        }
         if (!spec.titleContains.empty()) {
-            os << (spec.processName.empty() ? "" : "，") << "标题含 \"" << spec.titleContains << "\"";
+            os << (hasCondition ? "，" : "") << "标题含 \"" << spec.titleContains << "\"";
+            hasCondition = true;
+        }
+        if (spec.processId) {
+            os << (hasCondition ? "，" : "") << "PID " << *spec.processId;
         }
         os << "\n";
     }

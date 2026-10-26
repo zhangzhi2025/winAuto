@@ -123,6 +123,7 @@ struct WindowSpec {
     std::string processName;
     std::optional<std::string> titleContains;
     std::optional<int> timeoutMs;
+    std::optional<int> processId;
 };
 
 struct NamedWindow {

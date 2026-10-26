@@ -82,6 +82,22 @@ TEST(window_without_any_match_condition_is_rejected) {
     CHECK(check(wf).find("missing_field", "windows.main") != nullptr);
 }
 
+TEST(window_process_id_is_a_valid_match_condition) {
+    Workflow wf = minimalWorkflow();
+    wf.windows["main"].processName.clear();
+    wf.windows["main"].processId = 123;
+    CHECK(check(wf).ok());
+}
+
+TEST(window_size_must_be_positive_and_reasonably_bounded) {
+    Workflow wf = minimalWorkflow();
+    wf.windows["main"].width = 0;
+    wf.windows["main"].height = 32769;
+    ValidationReport report = check(wf);
+    CHECK(report.find("out_of_range", "windows.main.width") != nullptr);
+    CHECK(report.find("out_of_range", "windows.main.height") != nullptr);
+}
+
 TEST(click_requires_locator) {
     Step s = step("S2", StepType::Click);
     CHECK(check(withStep(s)).find("locator_required", "steps[1].locator") != nullptr);

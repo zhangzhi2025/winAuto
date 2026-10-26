@@ -60,6 +60,46 @@ TEST(read_write_roundtrip_matches_original_json) {
     }
 }
 
+TEST(window_size_conditions_roundtrip_and_are_optional) {
+    const std::string text = R"({
+      "schemaVersion":"1.0","id":"size","name":"Window size",
+      "windows":{"main":{"processName":"app.exe","width":800,"height":600}},
+      "steps":[{"id":"A","type":"activate_window","window":"main"}]
+    })";
+    Workflow wf = mustRead(text);
+    CHECK(wf.windows.at("main").width.has_value());
+    CHECK_EQ(*wf.windows.at("main").width, 800);
+    CHECK(wf.windows.at("main").height.has_value());
+    CHECK_EQ(*wf.windows.at("main").height, 600);
+    Workflow roundTrip = mustRead(writeWorkflow(wf));
+    CHECK_EQ(*roundTrip.windows.at("main").width, 800);
+    CHECK_EQ(*roundTrip.windows.at("main").height, 600);
+
+    Workflow noSize = mustRead(R"({
+      "schemaVersion":"1.0","id":"no-size","name":"No size",
+      "windows":{"main":{"processName":"app.exe"}},
+      "steps":[{"id":"A","type":"activate_window","window":"main"}]
+    })");
+    CHECK(!noSize.windows.at("main").width.has_value());
+    CHECK(!noSize.windows.at("main").height.has_value());
+}
+
+TEST(window_process_id_roundtrips_and_may_be_the_only_match_condition) {
+    const std::string text = R"({
+      "schemaVersion":"1.0","id":"pid","name":"Window PID",
+      "windows":{"main":{"processId":4294967295}},
+      "steps":[{"id":"A","type":"activate_window","window":"main"}]
+    })";
+    Workflow wf = mustRead(text);
+    CHECK(wf.windows.at("main").processId.has_value());
+    CHECK_EQ(*wf.windows.at("main").processId, std::uint32_t(4294967295u));
+    Workflow roundTrip = mustRead(writeWorkflow(wf));
+    CHECK_EQ(*roundTrip.windows.at("main").processId, std::uint32_t(4294967295u));
+
+    CHECK(!readWorkflow(R"({"windows":{"main":{"processId":0}}})").ok());
+    CHECK(!readWorkflow(R"({"windows":{"main":{"processId":4294967296}}})").ok());
+}
+
 TEST(mouse_script_steps_read_write_and_validate) {
     const std::string text = R"({
       "schemaVersion":"1.0","id":"mouse","name":"Mouse script",

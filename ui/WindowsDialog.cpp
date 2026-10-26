@@ -10,19 +10,24 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <cstdint>
+#include <limits>
+
 #include "Util.h"
 #include "WindowPickerDialog.h"
 
 WindowsDialog::WindowsDialog(wa::WorkflowEditor& editor, QWidget* parent) : QDialog(parent), editor_(editor) {
     setWindowTitle(QStringLiteral("目标窗口"));
-    resize(720, 360);
+    resize(1000, 360);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel(QStringLiteral("步骤通过别名引用窗口；同一动作可用于不同窗口。双击单元格编辑。\n"
-                                                "窗口必须唯一匹配：同一进程有多个窗口时，请用标题关键字区分。"),
+                                                "窗口必须唯一匹配：可用标题关键字、进程 ID 和窗口尺寸缩小范围。尺寸按外框像素精确匹配，留空不限制。"),
                                  this));
-    table_ = new QTableWidget(0, 4, this);
+    table_ = new QTableWidget(0, 7, this);
     table_->setHorizontalHeaderLabels({QStringLiteral("别名"), QStringLiteral("进程名"),
-                                       QStringLiteral("标题包含"), QStringLiteral("等待(ms)")});
+                                       QStringLiteral("标题包含"), QStringLiteral("等待(ms)"),
+                                       QStringLiteral("宽度(px)"), QStringLiteral("高度(px)"),
+                                       QStringLiteral("进程ID")});
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->horizontalHeader()->setStretchLastSection(true);
@@ -51,6 +56,10 @@ void WindowsDialog::reload() {
         table_->setItem(row, 1, new QTableWidgetItem(qs(spec.processName)));
         table_->setItem(row, 2, new QTableWidgetItem(qs(spec.titleContains)));
         table_->setItem(row, 3, new QTableWidgetItem(QString::number(spec.timeoutMs)));
+        table_->setItem(row, 4, new QTableWidgetItem(spec.width ? QString::number(*spec.width) : QString()));
+        table_->setItem(row, 5, new QTableWidgetItem(spec.height ? QString::number(*spec.height) : QString()));
+        table_->setItem(row, 6,
+                        new QTableWidgetItem(spec.processId ? QString::number(*spec.processId) : QString()));
         ++row;
     }
     reloading_ = false;
@@ -106,27 +115,3 @@ void WindowsDialog::removeSelected() {
     reload();
 }
 
-void WindowsDialog::onCellChanged(int row, int column) {
-    if (reloading_) return;
-    const QString alias = aliasAt(row);
-    if (alias.isEmpty()) return;
-    const std::string key = stdStr(alias);
-    const QString text = table_->item(row, column)->text();
-
-    if (column == 0) {
-        wa::Status st = editor_.renameWindow(key, stdStr(text.trimmed()));
-        if (!st.ok()) QMessageBox::warning(this, windowTitle(), qs(st.detail));
-        reload();  // 失败时恢复原值；成功时按新别名重新排序
-        return;
-    }
-    wa::WindowSpec spec = editor_.workflow().windows.at(key);
-    if (column == 1) spec.processName = stdStr(text.trimmed());
-    else if (column == 2) spec.titleContains = stdStr(text);
-    else {
-        bool ok = false;
-        const int v = text.toInt(&ok);
-        if (ok && v > 0) spec.timeoutMs = v;
-    }
-    editor_.setWindow(key, spec);
-    reload();
-}

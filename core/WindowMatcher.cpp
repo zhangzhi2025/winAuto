@@ -24,7 +24,7 @@ std::string normalizeProcessName(const std::string& name) {
 std::vector<WindowInfo> matchWindows(const std::vector<WindowInfo>& all, const WindowSpec& spec,
                                      const MatchOptions& options) {
     std::vector<WindowInfo> hits;
-    if (spec.processName.empty() && spec.titleContains.empty()) return hits;
+    if (spec.processName.empty() && spec.titleContains.empty() && !spec.processId) return hits;
 
     const std::string wantProc = normalizeProcessName(spec.processName);
     const std::string wantTitle = asciiLower(spec.titleContains);
@@ -32,8 +32,11 @@ std::vector<WindowInfo> matchWindows(const std::vector<WindowInfo>& all, const W
     for (const WindowInfo& w : all) {
         if (options.requireVisible && !w.visible) continue;
         if (options.excludePid != 0 && w.processId == options.excludePid) continue;
+        if (spec.processId && w.processId != *spec.processId) continue;
         if (!wantProc.empty() && normalizeProcessName(w.processName) != wantProc) continue;
         if (!wantTitle.empty() && asciiLower(w.title).find(wantTitle) == std::string::npos) continue;
+        if (spec.width && w.bounds.w != *spec.width) continue;
+        if (spec.height && w.bounds.h != *spec.height) continue;
         hits.push_back(w);
     }
     return hits;
@@ -47,6 +50,9 @@ Result<WindowInfo> pickUniqueWindow(const std::vector<WindowInfo>& all, const Wi
         if (!spec.titleContains.empty()) {
             what += (what.empty() ? "" : " ") + std::string("title containing \"") + spec.titleContains + "\"";
         }
+        if (spec.processId) {
+            what += (what.empty() ? "" : " ") + std::string("pid ") + std::to_string(*spec.processId);
+        }
         return Result<WindowInfo>::failure(ErrCode::WindowNotFound, "no window matches " + what);
     }
     if (hits.size() > 1) {
@@ -56,7 +62,7 @@ Result<WindowInfo> pickUniqueWindow(const std::vector<WindowInfo>& all, const Wi
             d += "pid " + std::to_string(hits[i].processId) + " \"" + hits[i].title + "\"";
         }
         if (hits.size() > kMaxListed) d += ", ...";
-        d += "); add titleContains to narrow it down";
+        d += "); add titleContains, processId, or another condition to narrow it down";
         return Result<WindowInfo>::failure(ErrCode::WindowNotFound, d);
     }
     return Result<WindowInfo>::success(hits.front());

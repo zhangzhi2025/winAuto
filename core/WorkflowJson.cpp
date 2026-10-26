@@ -417,13 +417,15 @@ bool readWorkflow(const JsonValue& root, Workflow* out, std::vector<Issue>* issu
             for (std::size_t i = 0; i < w->size(); ++i) {
                 const std::string& alias = w->keys()[i];
                 const std::string wpath = joinPath("windows", alias);
-                Fields wf2(w->valueAt(i), wpath, is, {"processName", "titleContains", "timeoutMs"});
+                Fields wf2(w->valueAt(i), wpath, is,
+                           {"processName", "titleContains", "timeoutMs", "processId"});
                 if (!wf2.ok()) continue;
                 NamedWindow nw;
                 nw.alias = alias;
                 nw.spec.processName = wf2.str("processName", true).value_or("");
                 nw.spec.titleContains = wf2.str("titleContains");
                 nw.spec.timeoutMs = wf2.integer("timeoutMs");
+                nw.spec.processId = wf2.integer("processId");
                 wf.windows.push_back(std::move(nw));
             }
         }
@@ -461,6 +463,7 @@ JsonValue writeWorkflow(const Workflow& wf) {
         w.set("processName", S(nw.spec.processName));
         if (nw.spec.titleContains) w.set("titleContains", S(*nw.spec.titleContains));
         if (nw.spec.timeoutMs) w.set("timeoutMs", I(*nw.spec.timeoutMs));
+        if (nw.spec.processId) w.set("processId", I(*nw.spec.processId));
         windows.set(nw.alias, std::move(w));
     }
     o.set("windows", std::move(windows));

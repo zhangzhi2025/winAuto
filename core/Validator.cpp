@@ -438,11 +438,16 @@ ValidationReport validateWorkflow(const Workflow& wf) {
     for (const auto& [alias, spec] : wf.windows) {
         const std::string p = "windows." + alias;
         if (alias.empty()) c.error("windows", "bad_alias", "window alias must not be empty");
-        if (spec.processName.empty() && spec.titleContains.empty()) {
+        if (spec.processName.empty() && spec.titleContains.empty() && !spec.processId) {
             c.error(p, "missing_field",
-                    "window needs processName or titleContains (refusing to match any window)");
+                    "window needs processName, titleContains, or processId (refusing to match any window)");
+        }
+        if (spec.processId && *spec.processId == 0) {
+            c.error(p + ".processId", "out_of_range", "processId must be greater than zero");
         }
         c.range(spec.timeoutMs, 1, kMaxTimeoutMs, p + ".timeoutMs", "timeoutMs");
+        if (spec.width) c.range(*spec.width, 1, 32768, p + ".width", "width");
+        if (spec.height) c.range(*spec.height, 1, 32768, p + ".height", "height");
     }
 
     c.range(wf.execution.stepTimeoutMs, 1, kMaxTimeoutMs, "execution.stepTimeoutMs",

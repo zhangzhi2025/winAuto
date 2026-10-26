@@ -9,7 +9,7 @@ static const char* kFull = R"({
   "id": "WF-1",
   "name": "全部字段",
   "windows": {
-    "main": { "processName": "notepad.exe", "titleContains": "Untitled", "timeoutMs": 4000 },
+    "main": { "processName": "notepad.exe", "titleContains": "Untitled", "timeoutMs": 4000, "processId": 1234 },
     "other": { "processName": "calc.exe" }
   },
   "execution": { "stepTimeoutMs": 3000, "onFailure": "continue", "screenshotOnFailure": true },
@@ -51,6 +51,7 @@ TEST(WorkflowIo, readsAllFields) {
     CHECK_EQ(wf.id, std::string("WF-1"));
     CHECK_EQ(wf.windows.size(), static_cast<std::size_t>(2));
     CHECK_EQ(wf.steps.size(), static_cast<std::size_t>(9));
+    CHECK_EQ(wf.windows[0].spec.processId.value_or(0), 1234);
     REQUIRE(wf.steps.size() == 9);
     CHECK(wf.steps[1].clickMode == ClickMode::Invoke);
     const auto* u = std::get_if<UiaLocator>(&wf.steps[1].locator->value);

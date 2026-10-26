@@ -52,11 +52,52 @@ TEST(title_matching_is_substring_and_ascii_case_insensitive) {
     CHECK_EQ(matchWindows(all, spec("", "report")).size(), size_t(1));  // 只给标题也行
 }
 
+TEST(process_id_matching_is_optional_and_can_be_the_only_condition) {
+    const std::vector<WindowInfo> all = {win(1, "app.exe", "first", 101), win(2, "app.exe", "second", 202)};
+    WindowSpec byPid;
+    byPid.processId = 202;
+    auto hits = matchWindows(all, byPid);
+    CHECK_EQ(hits.size(), size_t(1));
+    CHECK_EQ(hits[0].handle, std::uint64_t(2));
+
+    byPid.processName = "app.exe";
+    CHECK_EQ(matchWindows(all, byPid).size(), size_t(1));
+    byPid.processId = 303;
+    CHECK(matchWindows(all, byPid).empty());
+    CHECK(matchWindows(all, WindowSpec{}).empty());
+}
+
 TEST(both_conditions_must_hold_and_empty_spec_matches_nothing) {
     std::vector<WindowInfo> all = {win(1, "a.exe", "x"), win(2, "b.exe", "x")};
     CHECK_EQ(matchWindows(all, spec("a.exe", "x")).size(), size_t(1));
     CHECK_EQ(matchWindows(all, spec("a.exe", "y")).size(), size_t(0));
     CHECK_EQ(matchWindows(all, spec("", "")).size(), size_t(0));
+}
+
+TEST(window_size_conditions_are_optional_and_match_exactly) {
+    WindowInfo small = win(1, "app.exe", "target");
+    small.bounds.w = 800;
+    small.bounds.h = 600;
+    WindowInfo large = win(2, "app.exe", "target");
+    large.bounds.w = 1024;
+    large.bounds.h = 768;
+    const std::vector<WindowInfo> all = {small, large};
+
+    WindowSpec noSize = spec("app.exe");
+    CHECK_EQ(matchWindows(all, noSize).size(), size_t(2));
+
+    WindowSpec byWidth = noSize;
+    byWidth.width = 800;
+    CHECK_EQ(matchWindows(all, byWidth).size(), size_t(1));
+    CHECK_EQ(matchWindows(all, byWidth)[0].handle, std::uint64_t(1));
+
+    WindowSpec byHeight = noSize;
+    byHeight.height = 768;
+    CHECK_EQ(matchWindows(all, byHeight).size(), size_t(1));
+    CHECK_EQ(matchWindows(all, byHeight)[0].handle, std::uint64_t(2));
+
+    byWidth.height = 768;
+    CHECK(matchWindows(all, byWidth).empty());
 }
 
 TEST(invisible_and_own_windows_are_excluded) {

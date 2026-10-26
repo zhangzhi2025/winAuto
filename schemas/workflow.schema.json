@@ -96,6 +96,11 @@
               "minLength": 1
             }
           }
+        },
+        {
+          "required": [
+            "processId"
+          ]
         }
       ],
       "properties": {
@@ -105,8 +110,26 @@
         "titleContains": {
           "type": "string"
         },
+        "processId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "进程 ID；未设置时不参与匹配"
+        },
         "timeoutMs": {
           "$ref": "#/definitions/timeoutMs"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768,
+          "description": "窗口外框宽度（物理像素）；未设置时不参与匹配"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768,
+          "description": "窗口外框高度（物理像素）；未设置时不参与匹配"
         }
       }
     },

@@ -115,3 +115,54 @@ void WindowsDialog::removeSelected() {
     reload();
 }
 
+void WindowsDialog::onCellChanged(int row, int column) {
+    if (reloading_) return;
+    const QString alias = aliasAt(row);
+    if (alias.isEmpty()) return;
+    const std::string key = stdStr(alias);
+    const QString text = table_->item(row, column)->text();
+
+    if (column == 0) {
+        wa::Status st = editor_.renameWindow(key, stdStr(text.trimmed()));
+        if (!st.ok()) QMessageBox::warning(this, windowTitle(), qs(st.detail));
+        reload();  // 失败时恢复原值；成功时按新别名重新排序
+        return;
+    }
+    wa::WindowSpec spec = editor_.workflow().windows.at(key);
+    if (column == 1) spec.processName = stdStr(text.trimmed());
+    else if (column == 2) spec.titleContains = stdStr(text);
+    else if (column == 3) {
+        bool ok = false;
+        const int v = text.toInt(&ok);
+        if (ok && v > 0) spec.timeoutMs = v;
+    } else if (column == 4 || column == 5) {
+        bool ok = false;
+        const int v = text.toInt(&ok);
+        if (text.trimmed().isEmpty()) {
+            if (column == 4) spec.width.reset();
+            else spec.height.reset();
+        } else if (!ok || v <= 0 || v > 32768) {
+            QMessageBox::warning(this, windowTitle(), QStringLiteral("窗口宽度和高度必须是 1 到 32768 的整数；留空表示不限制。"));
+            reload();
+            return;
+        } else if (column == 4) {
+            spec.width = v;
+        } else {
+            spec.height = v;
+        }
+    } else if (column == 6) {
+        bool ok = false;
+        const qulonglong v = text.toULongLong(&ok);
+        if (text.trimmed().isEmpty()) {
+            spec.processId.reset();
+        } else if (!ok || v == 0 || v > std::numeric_limits<std::uint32_t>::max()) {
+            QMessageBox::warning(this, windowTitle(), QStringLiteral("进程 ID 必须是 1 到 4294967295 的整数；留空表示不限制。"));
+            reload();
+            return;
+        } else {
+            spec.processId = static_cast<std::uint32_t>(v);
+        }
+    }
+    editor_.setWindow(key, spec);
+    reload();
+}

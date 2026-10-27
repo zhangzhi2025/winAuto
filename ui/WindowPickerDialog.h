@@ -11,7 +11,9 @@ class WindowPickerDialog : public QDialog {
     Q_OBJECT
 public:
     explicit WindowPickerDialog(QWidget* parent = nullptr);
-    wa::WindowSpec selected() const { return selected_; }
+    wa::WindowSpec selected() const {
+        return selected_;
+    }
 
 public slots:
     void accept() override;

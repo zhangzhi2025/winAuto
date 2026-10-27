@@ -55,14 +55,14 @@ TEST(title_matching_is_substring_and_ascii_case_insensitive) {
 TEST(process_id_matching_is_optional_and_can_be_the_only_condition) {
     const std::vector<WindowInfo> all = {win(1, "app.exe", "first", 101), win(2, "app.exe", "second", 202)};
     WindowSpec byPid;
-    byPid.processId = 202;
+    byPid.processId = "202";
     auto hits = matchWindows(all, byPid);
     CHECK_EQ(hits.size(), size_t(1));
     CHECK_EQ(hits[0].handle, std::uint64_t(2));
 
     byPid.processName = "app.exe";
     CHECK_EQ(matchWindows(all, byPid).size(), size_t(1));
-    byPid.processId = 303;
+    byPid.processId = "303";
     CHECK(matchWindows(all, byPid).empty());
     CHECK(matchWindows(all, WindowSpec{}).empty());
 }
@@ -87,16 +87,16 @@ TEST(window_size_conditions_are_optional_and_match_exactly) {
     CHECK_EQ(matchWindows(all, noSize).size(), size_t(2));
 
     WindowSpec byWidth = noSize;
-    byWidth.width = 800;
+    byWidth.width = "800";
     CHECK_EQ(matchWindows(all, byWidth).size(), size_t(1));
     CHECK_EQ(matchWindows(all, byWidth)[0].handle, std::uint64_t(1));
 
     WindowSpec byHeight = noSize;
-    byHeight.height = 768;
+    byHeight.height = "768";
     CHECK_EQ(matchWindows(all, byHeight).size(), size_t(1));
     CHECK_EQ(matchWindows(all, byHeight)[0].handle, std::uint64_t(2));
 
-    byWidth.height = 768;
+    byWidth.height = "768";
     CHECK(matchWindows(all, byWidth).empty());
 }
 

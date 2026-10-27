@@ -85,17 +85,19 @@ TEST(window_without_any_match_condition_is_rejected) {
 TEST(window_process_id_is_a_valid_match_condition) {
     Workflow wf = minimalWorkflow();
     wf.windows["main"].processName.clear();
-    wf.windows["main"].processId = 123;
+    wf.windows["main"].processId = "123";
     CHECK(check(wf).ok());
 }
 
 TEST(window_size_must_be_positive_and_reasonably_bounded) {
     Workflow wf = minimalWorkflow();
-    wf.windows["main"].width = 0;
-    wf.windows["main"].height = 32769;
+    wf.windows["main"].width = "0";
+    wf.windows["main"].height = "32769";
     ValidationReport report = check(wf);
     CHECK(report.find("out_of_range", "windows.main.width") != nullptr);
     CHECK(report.find("out_of_range", "windows.main.height") != nullptr);
+    wf.windows["main"].width = "800px";
+    CHECK(check(wf).find("out_of_range", "windows.main.width") != nullptr);
 }
 
 TEST(click_requires_locator) {

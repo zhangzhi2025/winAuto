@@ -320,9 +320,15 @@ Status WorkflowEditor::updateStep(size_t row, Step step) {
     commit(std::move(next));
     return Status::success();
 }
-
-Status WorkflowEditor::setWindow(const std::string& alias, WindowSpec spec) {
-    if (alias.empty()) return Status::failure(ErrCode::InvalidWorkflow, "window alias must not be empty");
+Status WorkflowEditor::setWindow(
+    const std::string& alias,
+    WindowSpec spec)
+{
+    if (alias.empty()) {
+        return Status::failure(
+            ErrCode::InvalidWorkflow,
+            "window alias must not be empty");
+    }
     snapshot();
     wf_.windows[alias] = std::move(spec);
     changed();

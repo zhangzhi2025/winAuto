@@ -149,8 +149,8 @@ std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report
             os << (hasCondition ? "，" : "") << "标题含 \"" << spec.titleContains << "\"";
             hasCondition = true;
         }
-        if (spec.processId) {
-            os << (hasCondition ? "，" : "") << "PID " << *spec.processId;
+        if (!spec.processId.empty()) {
+            os << (hasCondition ? "，" : "") << "PID " << spec.processId;
         }
         os << "\n";
     }

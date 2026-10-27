@@ -104,23 +104,14 @@ private:
         return integer(o, key, 0, path);
     }
 
-    std::optional<std::uint32_t> optProcessId(const json& o, const std::string& path) {
-        const json* v = find(o, "processId");
-        if (!v) return std::nullopt;
-        const std::string fieldPath = childPath(path, "processId");
-        if (!v->is_number_integer()) throw ReadError{fieldPath, "must be an integer"};
-        if (v->is_number_unsigned()) {
-            const std::uint64_t n = v->get<std::uint64_t>();
-            if (n == 0 || n > std::numeric_limits<std::uint32_t>::max()) {
-                throw ReadError{fieldPath, "processId must be between 1 and 4294967295"};
-            }
-            return static_cast<std::uint32_t>(n);
-        }
-        const std::int64_t n = v->get<std::int64_t>();
-        if (n <= 0 || static_cast<std::uint64_t>(n) > std::numeric_limits<std::uint32_t>::max()) {
-            throw ReadError{fieldPath, "processId must be between 1 and 4294967295"};
-        }
-        return static_cast<std::uint32_t>(n);
+    std::string numericText(const json& o, const char* key, const std::string& path) {
+        const json* v = find(o, key);
+        if (!v) return "";
+        const std::string fieldPath = childPath(path, key);
+        if (v->is_string()) return v->get<std::string>();
+        if (v->is_number_unsigned()) return std::to_string(v->get<std::uint64_t>());
+        if (v->is_number_integer()) return std::to_string(v->get<std::int64_t>());
+        throw ReadError{fieldPath, "must be a string containing digits"};
     }
 
     double number(const json& o, const char* key, double def, const std::string& path) {
@@ -150,9 +141,9 @@ private:
         w.processName = str(v, "processName", "", path);
         w.titleContains = str(v, "titleContains", "", path);
         w.timeoutMs = integer(v, "timeoutMs", w.timeoutMs, path);
-        w.processId = optProcessId(v, path);
-        w.width = optInteger(v, "width", path);
-        w.height = optInteger(v, "height", path);
+        w.processId = numericText(v, "processId", path);
+        w.width = numericText(v, "width", path);
+        w.height = numericText(v, "height", path);
         return w;
     }
 
@@ -574,9 +565,9 @@ std::string writeWorkflow(const Workflow& wf, int indent) {
         w["processName"] = spec.processName;
         w["titleContains"] = spec.titleContains;
         w["timeoutMs"] = spec.timeoutMs;
-        if (spec.processId) w["processId"] = *spec.processId;
-        if (spec.width) w["width"] = *spec.width;
-        if (spec.height) w["height"] = *spec.height;
+        if (!spec.processId.empty()) w["processId"] = spec.processId;
+        if (!spec.width.empty()) w["width"] = spec.width;
+        if (!spec.height.empty()) w["height"] = spec.height;
         windows[alias] = w;
     }
     j["windows"] = windows;

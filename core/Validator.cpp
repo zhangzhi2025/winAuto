@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <set>
 
 namespace wa {
@@ -17,6 +18,18 @@ constexpr int kMaxCoord = 32767;
 
 std::string idx(const std::string& p, size_t i) { return p + "[" + std::to_string(i) + "]"; }
 std::string sub(const std::string& p, const std::string& k) { return p.empty() ? k : p + "." + k; }
+
+bool decimalInRange(const std::string& text, std::uint64_t maxValue) {
+    if (text.empty()) return true;
+    std::uint64_t value = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9') return false;
+        const std::uint64_t digit = static_cast<std::uint64_t>(c - '0');
+        if (value > (maxValue - digit) / 10) return false;
+        value = value * 10 + digit;
+    }
+    return value > 0 && value <= maxValue;
+}
 
 class Checker {
 public:
@@ -438,16 +451,17 @@ ValidationReport validateWorkflow(const Workflow& wf) {
     for (const auto& [alias, spec] : wf.windows) {
         const std::string p = "windows." + alias;
         if (alias.empty()) c.error("windows", "bad_alias", "window alias must not be empty");
-        if (spec.processName.empty() && spec.titleContains.empty() && !spec.processId) {
+        if (spec.processName.empty() && spec.titleContains.empty() && spec.processId.empty()) {
             c.error(p, "missing_field",
                     "window needs processName, titleContains, or processId (refusing to match any window)");
         }
-        if (spec.processId && *spec.processId == 0) {
-            c.error(p + ".processId", "out_of_range", "processId must be greater than zero");
-        }
+        if (!decimalInRange(spec.processId, UINT32_MAX))
+            c.error(p + ".processId", "out_of_range", "processId must contain digits and be between 1 and 4294967295");
         c.range(spec.timeoutMs, 1, kMaxTimeoutMs, p + ".timeoutMs", "timeoutMs");
-        if (spec.width) c.range(*spec.width, 1, 32768, p + ".width", "width");
-        if (spec.height) c.range(*spec.height, 1, 32768, p + ".height", "height");
+        if (!decimalInRange(spec.width, 32768))
+            c.error(p + ".width", "out_of_range", "width must contain digits and be between 1 and 32768");
+        if (!decimalInRange(spec.height, 32768))
+            c.error(p + ".height", "out_of_range", "height must contain digits and be between 1 and 32768");
     }
 
     c.range(wf.execution.stepTimeoutMs, 1, kMaxTimeoutMs, "execution.stepTimeoutMs",

@@ -63,41 +63,45 @@ TEST(read_write_roundtrip_matches_original_json) {
 TEST(window_size_conditions_roundtrip_and_are_optional) {
     const std::string text = R"({
       "schemaVersion":"1.0","id":"size","name":"Window size",
-      "windows":{"main":{"processName":"app.exe","width":800,"height":600}},
+      "windows":{"main":{"processName":"app.exe","width":"800","height":"600"}},
       "steps":[{"id":"A","type":"activate_window","window":"main"}]
     })";
     Workflow wf = mustRead(text);
-    CHECK(wf.windows.at("main").width.has_value());
-    CHECK_EQ(*wf.windows.at("main").width, 800);
-    CHECK(wf.windows.at("main").height.has_value());
-    CHECK_EQ(*wf.windows.at("main").height, 600);
+    CHECK_EQ(wf.windows.at("main").width, "800");
+    CHECK_EQ(wf.windows.at("main").height, "600");
     Workflow roundTrip = mustRead(writeWorkflow(wf));
-    CHECK_EQ(*roundTrip.windows.at("main").width, 800);
-    CHECK_EQ(*roundTrip.windows.at("main").height, 600);
+    CHECK_EQ(roundTrip.windows.at("main").width, "800");
+    CHECK_EQ(roundTrip.windows.at("main").height, "600");
 
     Workflow noSize = mustRead(R"({
       "schemaVersion":"1.0","id":"no-size","name":"No size",
       "windows":{"main":{"processName":"app.exe"}},
       "steps":[{"id":"A","type":"activate_window","window":"main"}]
     })");
-    CHECK(!noSize.windows.at("main").width.has_value());
-    CHECK(!noSize.windows.at("main").height.has_value());
+    CHECK(noSize.windows.at("main").width.empty());
+    CHECK(noSize.windows.at("main").height.empty());
 }
 
 TEST(window_process_id_roundtrips_and_may_be_the_only_match_condition) {
     const std::string text = R"({
       "schemaVersion":"1.0","id":"pid","name":"Window PID",
-      "windows":{"main":{"processId":4294967295}},
+      "windows":{"main":{"processId":"4294967295"}},
       "steps":[{"id":"A","type":"activate_window","window":"main"}]
     })";
     Workflow wf = mustRead(text);
-    CHECK(wf.windows.at("main").processId.has_value());
-    CHECK_EQ(*wf.windows.at("main").processId, std::uint32_t(4294967295u));
+    CHECK_EQ(wf.windows.at("main").processId, "4294967295");
     Workflow roundTrip = mustRead(writeWorkflow(wf));
-    CHECK_EQ(*roundTrip.windows.at("main").processId, std::uint32_t(4294967295u));
+    CHECK_EQ(roundTrip.windows.at("main").processId, "4294967295");
 
-    CHECK(!readWorkflow(R"({"windows":{"main":{"processId":0}}})").ok());
-    CHECK(!readWorkflow(R"({"windows":{"main":{"processId":4294967296}}})").ok());
+    CHECK(validateWorkflow(mustRead(R"({"windows":{"main":{"processId":"0"}}})")).has("out_of_range"));
+    CHECK(validateWorkflow(mustRead(R"({"windows":{"main":{"processId":"4294967296"}}})")).has("out_of_range"));
+    CHECK(validateWorkflow(mustRead(R"({"windows":{"main":{"processId":"1x"}}})")).has("out_of_range"));
+    const Workflow legacyNumber = mustRead(R"({
+      "schemaVersion":"1.0","id":"legacy","name":"Legacy PID",
+      "windows":{"main":{"processId":123}},
+      "steps":[{"id":"A","type":"activate_window","window":"main"}]
+    })");
+    CHECK_EQ(legacyNumber.windows.at("main").processId, "123");
 }
 
 TEST(mouse_script_steps_read_write_and_validate) {

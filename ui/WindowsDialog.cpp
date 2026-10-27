@@ -10,6 +10,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 
@@ -56,10 +57,9 @@ void WindowsDialog::reload() {
         table_->setItem(row, 1, new QTableWidgetItem(qs(spec.processName)));
         table_->setItem(row, 2, new QTableWidgetItem(qs(spec.titleContains)));
         table_->setItem(row, 3, new QTableWidgetItem(QString::number(spec.timeoutMs)));
-        table_->setItem(row, 4, new QTableWidgetItem(spec.width ? QString::number(*spec.width) : QString()));
-        table_->setItem(row, 5, new QTableWidgetItem(spec.height ? QString::number(*spec.height) : QString()));
-        table_->setItem(row, 6,
-                        new QTableWidgetItem(spec.processId ? QString::number(*spec.processId) : QString()));
+        table_->setItem(row, 4, new QTableWidgetItem(qs(spec.width)));
+        table_->setItem(row, 5, new QTableWidgetItem(qs(spec.height)));
+        table_->setItem(row, 6, new QTableWidgetItem(qs(spec.processId)));
         ++row;
     }
     reloading_ = false;
@@ -138,29 +138,33 @@ void WindowsDialog::onCellChanged(int row, int column) {
     } else if (column == 4 || column == 5) {
         bool ok = false;
         const int v = text.toInt(&ok);
-        if (text.trimmed().isEmpty()) {
-            if (column == 4) spec.width.reset();
-            else spec.height.reset();
-        } else if (!ok || v <= 0 || v > 32768) {
+        const bool digitsOnly = !text.isEmpty() &&
+                                std::all_of(text.cbegin(), text.cend(), [](QChar c) { return c >= '0' && c <= '9'; });
+        if (text.isEmpty()) {
+            if (column == 4) spec.width.clear();
+            else spec.height.clear();
+        } else if (!digitsOnly || !ok || v <= 0 || v > 32768) {
             QMessageBox::warning(this, windowTitle(), QStringLiteral("窗口宽度和高度必须是 1 到 32768 的整数；留空表示不限制。"));
             reload();
             return;
         } else if (column == 4) {
-            spec.width = v;
+            spec.width = stdStr(text);
         } else {
-            spec.height = v;
+            spec.height = stdStr(text);
         }
     } else if (column == 6) {
         bool ok = false;
         const qulonglong v = text.toULongLong(&ok);
-        if (text.trimmed().isEmpty()) {
-            spec.processId.reset();
-        } else if (!ok || v == 0 || v > std::numeric_limits<std::uint32_t>::max()) {
+        const bool digitsOnly = !text.isEmpty() &&
+                                std::all_of(text.cbegin(), text.cend(), [](QChar c) { return c >= '0' && c <= '9'; });
+        if (text.isEmpty()) {
+            spec.processId.clear();
+        } else if (!digitsOnly || !ok || v == 0 || v > std::numeric_limits<std::uint32_t>::max()) {
             QMessageBox::warning(this, windowTitle(), QStringLiteral("进程 ID 必须是 1 到 4294967295 的整数；留空表示不限制。"));
             reload();
             return;
         } else {
-            spec.processId = static_cast<std::uint32_t>(v);
+            spec.processId = stdStr(text);
         }
     }
     editor_.setWindow(key, spec);

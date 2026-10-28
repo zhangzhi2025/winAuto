@@ -75,6 +75,7 @@ struct EngineDeps {
     IClock* clock = nullptr;
     IScreenshot* screenshot = nullptr;  // 可为空：不截图
     IClipboard* clipboard = nullptr;    // 可为空：method=clipboard 的输入步骤失败（Unsupported）
+    IScriptRunner* scripts = nullptr;   // 可为空：script 步骤失败（Unsupported）
     StepGateFn beforeStep;  // 可为空：不拦截
     PromptFn prompt;  // 可为空；为空时 textFrom=prompt 的步骤失败（Unsupported）
     EngineObserver observer;

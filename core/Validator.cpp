@@ -9,9 +9,13 @@
 #include <cstdint>
 #include <set>
 
+#include "nlohmann/json.hpp"
+
 namespace wa {
 
 namespace {
+
+using json = nlohmann::json;
 
 constexpr int kMaxRetryTimes = 10;
 constexpr int kMaxCoord = 32767;
@@ -53,6 +57,49 @@ public:
     void checkRetry(const RetryPolicy& rp, const std::string& path) {
         range(rp.times, 0, kMaxRetryTimes, sub(path, "times"), "retry.times");
         range(rp.intervalMs, 0, kMaxTimeoutMs, sub(path, "intervalMs"), "retry.intervalMs");
+    }
+
+    void checkWorkflowData(const std::string& dataJson) {
+        if (dataJson.size() > kMaxWorkflowDataBytes) {
+            error("data", "workflow_data_too_large",
+                  "workflow data must not exceed " + std::to_string(kMaxWorkflowDataBytes) + " bytes");
+            return;
+        }
+        try {
+            const json data = json::parse(dataJson);
+            if (!data.is_object()) {
+                error("data", "workflow_data_invalid", "workflow data must be a JSON object");
+                return;
+            }
+            checkWorkflowDataValue(data, "data", 0);
+        } catch (const json::exception& e) {
+            error("data", "workflow_data_invalid", std::string("workflow data is not valid JSON: ") + e.what());
+        }
+    }
+
+    void checkWorkflowDataValue(const json& value, const std::string& path, int depth) {
+        if (depth > kMaxWorkflowDataDepth) {
+            error(path, "workflow_data_too_deep",
+                  "workflow data nesting must not exceed " + std::to_string(kMaxWorkflowDataDepth));
+            return;
+        }
+        if (value.is_object()) {
+            for (auto it = value.begin(); it != value.end(); ++it) {
+                const std::string keyPath = it.key().empty() ? path : sub(path, it.key());
+                if (it.key().empty() || it.key().size() > kMaxWorkflowDataKeyLength) {
+                    error(keyPath, "workflow_data_invalid",
+                          "workflow data keys must be non-empty and no longer than " +
+                              std::to_string(kMaxWorkflowDataKeyLength) + " bytes");
+                }
+                checkWorkflowDataValue(it.value(), keyPath, depth + 1);
+            }
+        } else if (value.is_array()) {
+            for (size_t i = 0; i < value.size(); ++i) {
+                checkWorkflowDataValue(value[i], idx(path, i), depth + 1);
+            }
+        } else if (value.is_number_float() && !std::isfinite(value.get<double>())) {
+            error(path, "workflow_data_invalid", "workflow data numbers must be finite");
+        }
     }
 
     void checkLeaf(const LeafLocator& loc, const std::string& path) {
@@ -284,6 +331,40 @@ public:
             return;
         }
 
+        if (s.type == StepType::Script) {
+            warn(path, "executable_script",
+                 "this step runs arbitrary " +
+                     std::string(s.scriptLanguage ? toString(*s.scriptLanguage) : "script") +
+                     " code with the application's user privileges; inspect it before running",
+                 /*confirm=*/true);
+            if (!s.scriptLanguage) {
+                error(sub(path, "language"), "missing_field", "script language is required");
+            } else if (*s.scriptLanguage != ScriptLanguage::Python && *s.scriptLanguage != ScriptLanguage::Lua) {
+                error(sub(path, "language"), "bad_enum", "script language must be python or lua");
+            }
+            if (!s.scriptCode) {
+                error(sub(path, "code"), "missing_field", "script code is required");
+            } else if (std::all_of(s.scriptCode->begin(), s.scriptCode->end(), [](unsigned char ch) {
+                           return std::isspace(ch) != 0;
+                       })) {
+                error(sub(path, "code"), "script_code_required",
+                      "script code must not be empty or whitespace-only");
+            }
+            if (!s.window.empty()) {
+                error(sub(path, "window"), "script_field_not_allowed", "script steps do not target a window");
+            }
+            if (s.locator) {
+                error(sub(path, "locator"), "script_field_not_allowed", "script steps do not use locators");
+            }
+            if (s.text || s.textFromPrompt || s.sensitive || !s.keys.empty() || s.durationMs ||
+                s.expect || s.retry || s.condition || s.times || s.maxIterations || s.intervalMs ||
+                !s.body.empty() || !s.elseBody.empty()) {
+                error(path, "script_field_not_allowed", "script steps cannot contain fields for other step types");
+            }
+        } else if (s.scriptLanguage || s.scriptCode) {
+            error(path, "script_fields_not_allowed", "language and code are only valid on script steps");
+        }
+
         if (requiresWindow(s.type)) {
             if (s.window.empty()) {
                 error(sub(path, "window"), "missing_field", "window alias is required");
@@ -430,6 +511,8 @@ bool isSupportedKey(const std::string& key) {
 ValidationReport validateWorkflow(const Workflow& wf) {
     ValidationReport report;
     Checker c(report);
+
+    c.checkWorkflowData(wf.initialDataJson);
 
     for (const auto& f : wf.unknownFields) {
         c.error(f, "unknown_field", "unknown field \"" + f + "\" (typo?)");

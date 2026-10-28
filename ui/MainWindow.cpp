@@ -51,6 +51,7 @@ const wa::StepType kStepTypes[] = {wa::StepType::ActivateWindow, wa::StepType::C
                                    wa::StepType::SetValue,       wa::StepType::InputText,
                                    wa::StepType::Hotkey,         wa::StepType::Wait,
                                    wa::StepType::WaitForElement, wa::StepType::AssertElement,
+                                   wa::StepType::Script,
                                    wa::StepType::If,             wa::StepType::Repeat,
                                    wa::StepType::While};
 
@@ -64,6 +65,7 @@ QString typeLabel(wa::StepType t) {
         case wa::StepType::Wait: return QStringLiteral("等待");
         case wa::StepType::WaitForElement: return QStringLiteral("等待控件");
         case wa::StepType::AssertElement: return QStringLiteral("断言控件");
+        case wa::StepType::Script: return QStringLiteral("脚本");
         case wa::StepType::If: return QStringLiteral("如果");
         case wa::StepType::Repeat: return QStringLiteral("重复");
         case wa::StepType::While: return QStringLiteral("当…时循环");

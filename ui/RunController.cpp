@@ -16,6 +16,7 @@
 #include "Win32ImageLocator.h"
 #include "Win32InputController.h"
 #include "Win32Screenshot.h"
+#include "ScriptWorker.h"
 #include "Win32StopHotkey.h"
 #include "Win32UiaLocator.h"
 #include "Win32WindowProvider.h"
@@ -62,6 +63,7 @@ void RunWorker::run() {
     wa::platform::Win32InputController input(&uia);
     wa::platform::Win32Clipboard clipboard;  // 剪贴板输入；和 COM 对象一样在工作线程里创建
     wa::platform::Win32Screenshot screenshot;
+    wa::platform::ScriptWorker scripts;
     wa::SteadyClock clock;
 
     gate_.startPaused(startPaused_);
@@ -74,6 +76,7 @@ void RunWorker::run() {
     deps.clock = &clock;
     deps.clipboard = &clipboard;
     deps.screenshot = &screenshot;
+    deps.scripts = &scripts;
     deps.beforeStep = [this](const wa::Step& s, size_t i) { return gate_.gate(s, i); };
     deps.prompt = [this](const wa::Step& s) -> wa::Result<std::string> {
         QString text;

@@ -95,6 +95,7 @@ enum class StepType {
     Wait,
     WaitForElement,
     AssertElement,
+    Script,
     // ---- 流程控制（块语句，带子步骤）
     If,      // condition 成立执行 body（JSON: then），否则执行 elseBody（JSON: else）
     Repeat,  // 固定次数循环 body
@@ -102,6 +103,8 @@ enum class StepType {
 };
 
 bool isBlockType(StepType t);
+
+enum class ScriptLanguage { Python, Lua };
 
 enum class FailurePolicy { Stop, Continue };
 enum class InputMethod { Unicode, Clipboard };
@@ -151,6 +154,9 @@ struct Step {
     // wait
     std::optional<int> durationMs;
 
+    std::optional<ScriptLanguage> scriptLanguage;
+    std::optional<std::string> scriptCode;
+
     std::optional<int> timeoutMs;
     std::optional<Expect> expect;
     std::optional<RetryPolicy> retry;
@@ -183,6 +189,7 @@ struct Workflow {
     std::string name;
     std::map<std::string, WindowSpec> windows;
     ExecutionOptions execution;
+    std::string initialDataJson = "{}";  // JSON object kept serialized so core headers expose no JSON library
     std::vector<Step> steps;
 
     // 读入时发现的未知字段（路径形式，如 "steps[1].locatr"），由校验器报错，防止拼写错误被静默忽略
@@ -192,6 +199,8 @@ struct Workflow {
 // ---------------------------------------------------------------- 字符串互转
 const char* toString(StepType t);
 StepType parseStepType(const std::string& s);  // 未知返回 StepType::Unknown
+const char* toString(ScriptLanguage language);
+bool parseScriptLanguage(const std::string& s, ScriptLanguage* out);
 bool requiresWindow(StepType t);
 bool requiresLocator(StepType t);
 
@@ -202,5 +211,8 @@ constexpr int kMaxNesting = 8;                // 块语句最大嵌套深度
 constexpr int kDefaultLoopIntervalMs = 100;
 constexpr int kMaxStepExecutionsLimit = 1000000;
 constexpr size_t kMaxClipboardBytes = 1u << 20;  // 剪贴板输入的文本上限（UTF-8，1 MiB）
+constexpr size_t kMaxWorkflowDataBytes = 1u << 20;
+constexpr size_t kMaxWorkflowDataKeyLength = 256;
+constexpr int kMaxWorkflowDataDepth = 32;
 
 }  // namespace wa

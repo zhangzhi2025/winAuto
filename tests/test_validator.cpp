@@ -21,6 +21,58 @@ TEST(minimal_workflow_is_valid) {
     CHECK_EQ(r.issues.size(), size_t(0));
 }
 
+TEST(script_steps_require_supported_language_and_nonempty_code) {
+    Workflow wf = minimalWorkflow();
+    Step script;
+    script.id = "PY";
+    script.type = StepType::Script;
+    script.scriptLanguage = ScriptLanguage::Python;
+    script.scriptCode = "value = 1";
+    wf.steps.push_back(script);
+    CHECK(check(wf).ok());
+
+    wf.steps.back().scriptLanguage = ScriptLanguage::Lua;
+    wf.steps.back().scriptCode = "value = 1";
+    CHECK(check(wf).ok());
+
+    wf.steps.back().window = "main";
+    CHECK(check(wf).has("script_field_not_allowed"));
+    wf.steps.back().window.clear();
+
+    wf.steps.back().scriptLanguage.reset();
+    CHECK(check(wf).find("missing_field", "steps[1].language") != nullptr);
+    wf.steps.back().scriptLanguage = ScriptLanguage::Python;
+    wf.steps.back().scriptCode = " \t\r\n ";
+    CHECK(check(wf).find("script_code_required", "steps[1].code") != nullptr);
+    wf.steps.back().scriptCode.reset();
+    CHECK(check(wf).find("missing_field", "steps[1].code") != nullptr);
+}
+
+TEST(initial_workflow_data_must_be_a_bounded_json_object) {
+    Workflow wf = minimalWorkflow();
+    wf.initialDataJson = R"({"key":{"items":[null,true,1,"text"]}})";
+    CHECK(check(wf).ok());
+
+    wf.initialDataJson = "[]";
+    CHECK(check(wf).has("workflow_data_invalid"));
+    wf.initialDataJson = "{";
+    CHECK(check(wf).has("workflow_data_invalid"));
+    wf.initialDataJson = R"({"":1})";
+    CHECK(check(wf).has("workflow_data_invalid"));
+
+    std::string longKey(kMaxWorkflowDataKeyLength + 1, 'k');
+    wf.initialDataJson = "{\"" + longKey + "\":1}";
+    CHECK(check(wf).has("workflow_data_invalid"));
+
+    std::string nested = "0";
+    for (int i = 0; i < kMaxWorkflowDataDepth; ++i) nested = "[" + nested + "]";
+    wf.initialDataJson = "{\"value\":" + nested + "}";
+    CHECK(check(wf).has("workflow_data_too_deep"));
+
+    wf.initialDataJson = "{\"value\":\"" + std::string(kMaxWorkflowDataBytes, 'x') + "\"}";
+    CHECK(check(wf).has("workflow_data_too_large"));
+}
+
 TEST(empty_workflow_is_rejected) {
     Workflow wf = minimalWorkflow();
     wf.steps.clear();

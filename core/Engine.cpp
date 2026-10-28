@@ -1,17 +1,24 @@
 #include "core/Engine.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <set>
+#include <thread>
 
 #include "core/Validator.h"
+#include "core/Json.h"
+#include "nlohmann/json.hpp"
 
 namespace wa {
 
 namespace {
 constexpr int kPollIntervalMs = 100;
+using json = nlohmann::json;
 
 bool asLeaf(const Locator& loc, LeafLocator* out) {
     if (const auto* u = std::get_if<UiaLocator>(&loc)) { *out = *u; return true; }
@@ -19,6 +26,23 @@ bool asLeaf(const Locator& loc, LeafLocator* out) {
     if (const auto* s = std::get_if<ScreenPointLocator>(&loc)) { *out = *s; return true; }
     if (const auto* i = std::get_if<ImageLocator>(&loc)) { *out = *i; return true; }
     return false;
+}
+
+bool validWorkflowData(const json& value, int depth = 0) {
+    if (depth > kMaxWorkflowDataDepth) return false;
+    if (value.is_object()) {
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            if (it.key().empty() || it.key().size() > kMaxWorkflowDataKeyLength ||
+                !validWorkflowData(it.value(), depth + 1)) return false;
+        }
+    } else if (value.is_array()) {
+        for (const auto& item : value) {
+            if (!validWorkflowData(item, depth + 1)) return false;
+        }
+    } else if (!(value.is_null() || value.is_boolean() || value.is_number() || value.is_string())) {
+        return false;
+    }
+    return true;
 }
 }  // namespace
 
@@ -42,6 +66,9 @@ struct WorkflowEngine::Run {
     RunReport report;
     std::int64_t t0 = 0;
     std::map<std::string, std::uint64_t> handles;  // 窗口别名 -> 句柄
+    json workflowData = json::object();
+    std::chrono::steady_clock::time_point scriptDeadline{};
+    std::shared_ptr<CancelToken> scriptCancellation;
 
     // ---- 流程控制 / 范围 / 截图 的运行状态
     const RunOptions* options = nullptr;
@@ -271,10 +298,273 @@ struct WorkflowEngine::Run {
             case StepType::While:
                 return Status::failure(ErrCode::Internal, "block steps are not executed as leaf steps");
 
+            case StepType::Script:
+                return runScript(s);
+
             case StepType::Unknown:
                 break;
         }
         return Status::failure(ErrCode::Internal, "unknown step type");
+    }
+
+    Result<ScriptHostResponse> handleScriptRequest(const ScriptHostRequest& request) {
+        if (token.isCancelled()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Cancelled, "script cancelled");
+        }
+        if (scriptCancellation && scriptCancellation->isCancelled()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+        }
+        if (std::chrono::steady_clock::now() >= scriptDeadline) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+        }
+        json args;
+        try {
+            if (request.argumentsJson.size() > kMaxWorkflowDataBytes) {
+                return Result<ScriptHostResponse>::failure(ErrCode::LimitExceeded, "host request too large");
+            }
+            args = json::parse(request.argumentsJson);
+        } catch (const std::exception&) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid host request JSON");
+        }
+        if (!args.is_object()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "host request arguments must be an object");
+        }
+
+        auto success = [](const json& value) {
+            return Result<ScriptHostResponse>::success(ScriptHostResponse{value.dump()});
+        };
+        auto stringArg = [&args](const char* name) -> const std::string* {
+            const auto it = args.find(name);
+            return it != args.end() && it->is_string() ? &it->get_ref<const std::string&>() : nullptr;
+        };
+        if (request.operation == "data.get") {
+            const std::string* key = stringArg("key");
+            if (!key || key->empty() || key->size() > kMaxWorkflowDataKeyLength) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "data.get requires a valid key");
+            }
+            const auto it = workflowData.find(*key);
+            return success(json{{"found", it != workflowData.end()},
+                                {"value", it == workflowData.end() ? json(nullptr) : it.value()}});
+        }
+        if (request.operation == "data.set") {
+            const std::string* key = stringArg("key");
+            const auto value = args.find("value");
+            if (!key || key->empty() || key->size() > kMaxWorkflowDataKeyLength || value == args.end()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "data.set requires a key and value");
+            }
+            json updated = workflowData;
+            updated[*key] = *value;
+            if (!validWorkflowData(updated) || updated.dump().size() > kMaxWorkflowDataBytes) {
+                return Result<ScriptHostResponse>::failure(ErrCode::LimitExceeded, "workflow data limit exceeded");
+            }
+            if (scriptCancellation && scriptCancellation->isCancelled()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+            }
+            workflowData = std::move(updated);
+            return success(json{{"ok", true}});
+        }
+        if (request.operation == "window.activate") {
+            const std::string* alias = stringArg("window");
+            const auto it = alias ? handles.find(*alias) : handles.end();
+            if (it == handles.end()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::WindowNotFound, "unknown workflow window alias");
+            }
+            if (!deps.windows->isWindowValid(it->second)) {
+                return Result<ScriptHostResponse>::failure(ErrCode::WindowNotFound, "workflow window is no longer valid");
+            }
+            if (scriptCancellation && scriptCancellation->isCancelled()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+            }
+            const Status activated = deps.windows->activateWindow(it->second);
+            return activated.ok() ? success(json{{"ok", true}})
+                                  : Result<ScriptHostResponse>::failure(activated.code, activated.detail);
+        }
+
+        const bool elementOperation = request.operation == "element.read" ||
+                                      request.operation == "element.click" ||
+                                      request.operation == "element.move" ||
+                                      request.operation == "element.set_value";
+        const bool inputOperation = request.operation == "input.text" ||
+                                    request.operation == "input.hotkey";
+        if (!elementOperation && !inputOperation) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "unsupported script host operation");
+        }
+        const std::string* alias = stringArg("window");
+        const auto handleIt = alias ? handles.find(*alias) : handles.end();
+        if (handleIt == handles.end()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::WindowNotFound, "unknown workflow window alias");
+        }
+        const std::uint64_t handle = handleIt->second;
+        if (!deps.windows->isWindowValid(handle)) {
+            return Result<ScriptHostResponse>::failure(ErrCode::WindowNotFound, "workflow window is no longer valid");
+        }
+        if (request.operation == "input.text" || request.operation == "input.hotkey") {
+            if (!deps.windows->isForeground(handle)) {
+                return Result<ScriptHostResponse>::failure(ErrCode::InputBlocked, "target window is not in the foreground");
+            }
+            if (request.operation == "input.text") {
+                const std::string* text = stringArg("text");
+                if (!text) return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "input.text requires text");
+                if (scriptCancellation && scriptCancellation->isCancelled()) {
+                    return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+                }
+                logger.addSecret(*text);
+                const Status input = deps.input->typeText(*text, InputMethod::Unicode);
+                return input.ok() ? success(json{{"ok", true}})
+                                  : Result<ScriptHostResponse>::failure(input.code, input.detail);
+            }
+            const auto keys = args.find("keys");
+            if (keys == args.end() || !keys->is_array() || keys->empty() || keys->size() > 8) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "input.hotkey requires 1 to 8 keys");
+            }
+            std::vector<std::string> normalized;
+            for (const auto& key : *keys) {
+                if (!key.is_string()) return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "hotkey keys must be strings");
+                normalized.push_back(normalizeKey(key.get<std::string>()));
+            }
+            Workflow probe;
+            probe.schemaVersion = wf.schemaVersion;
+            probe.id = "script-hotkey";
+            probe.name = "script-hotkey";
+            probe.windows.emplace(*alias, wf.windows.at(*alias));
+            Step hotkeyStep;
+            hotkeyStep.id = "HOTKEY";
+            hotkeyStep.type = StepType::Hotkey;
+            hotkeyStep.window = *alias;
+            hotkeyStep.keys = normalized;
+            probe.steps.push_back(std::move(hotkeyStep));
+            const ValidationReport checked = validateWorkflow(probe);
+            if (!checked.ok()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid script hotkey");
+            }
+            if (scriptCancellation && scriptCancellation->isCancelled()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+            }
+            const Status sent = deps.input->hotkey(normalized);
+            return sent.ok() ? success(json{{"ok", true}})
+                             : Result<ScriptHostResponse>::failure(sent.code, sent.detail);
+        }
+        const auto locatorJson = args.find("locator");
+        if (locatorJson == args.end()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "automation request requires a locator");
+        }
+        Result<Locator> parsed = readLocatorJson(locatorJson->dump());
+        if (!parsed.ok()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid automation locator");
+        }
+        Workflow probe;
+        probe.schemaVersion = wf.schemaVersion;
+        probe.id = "script-locator";
+        probe.name = "script-locator";
+        probe.windows.emplace(*alias, wf.windows.at(*alias));
+        Step target;
+        target.id = "ELEMENT";
+        target.type = StepType::Click;
+        target.window = *alias;
+        target.locator = parsed.value;
+        probe.steps.push_back(std::move(target));
+        const ValidationReport checked = validateWorkflow(probe);
+        if (!checked.ok()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid automation locator");
+        }
+        LeafLocator locator;
+        if (!asLeaf(parsed.value, &locator)) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "fallback locators are not supported by scripts");
+        }
+        const CancelToken& hostToken = scriptCancellation ? *scriptCancellation : token;
+        Result<ElementRef> found = deps.locator->locate(handle, locator, hostToken);
+        if (!found.ok()) return Result<ScriptHostResponse>::failure(found.code, found.detail);
+        if (token.isCancelled()) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Cancelled, "script cancelled");
+        }
+        if ((scriptCancellation && scriptCancellation->isCancelled()) ||
+            std::chrono::steady_clock::now() >= scriptDeadline) {
+            return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+        }
+        if (!found.value.enabled && request.operation != "element.read" &&
+            request.operation != "element.move") {
+            return Result<ScriptHostResponse>::failure(ErrCode::InputBlocked, "target element is disabled");
+        }
+        if (request.operation == "element.read") {
+            return success(json{{"name", found.value.name},
+                                {"controlType", found.value.controlType},
+                                {"bounds", {{"x", found.value.bounds.x}, {"y", found.value.bounds.y},
+                                            {"width", found.value.bounds.w}, {"height", found.value.bounds.h}}},
+                                {"enabled", found.value.enabled}});
+        }
+        if (request.operation == "element.click") {
+            if (found.value.supportsInvoke) {
+                const Status invoked = deps.input->invoke(found.value);
+                return invoked.ok() ? success(json{{"ok", true}})
+                                    : Result<ScriptHostResponse>::failure(invoked.code, invoked.detail);
+            }
+            const Status click = deps.input->clickPoint(found.value.bounds.center(), handle);
+            return click.ok() ? success(json{{"ok", true}})
+                              : Result<ScriptHostResponse>::failure(click.code, click.detail);
+        }
+        if (request.operation == "element.move") {
+            if (scriptCancellation && scriptCancellation->isCancelled()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+            }
+            const Status move = deps.input->movePoint(found.value.bounds.center(), handle);
+            return move.ok() ? success(json{{"ok", true}})
+                             : Result<ScriptHostResponse>::failure(move.code, move.detail);
+        }
+        if (request.operation == "element.set_value") {
+            const std::string* text = stringArg("text");
+            if (!text) return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "set_value requires text");
+            if (!found.value.supportsValue) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "element does not support ValuePattern");
+            }
+            logger.addSecret(*text);
+            const Status set = deps.input->setValue(found.value, *text);
+            return set.ok() ? success(json{{"ok", true}})
+                            : Result<ScriptHostResponse>::failure(set.code, set.detail);
+        }
+        return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "unsupported script host operation");
+    }
+
+    Status runScript(const Step& step) {
+        if (!deps.scripts) return Status::failure(ErrCode::Unsupported, "script runtime is not configured");
+        if (!step.scriptLanguage || !step.scriptCode) {
+            return Status::failure(ErrCode::InvalidWorkflow, "script language or source is missing");
+        }
+        scriptDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutFor(step));
+        scriptCancellation = std::make_shared<CancelToken>();
+        auto stopped = std::make_shared<std::atomic<bool>>(false);
+        const auto cancellation = scriptCancellation;
+        const auto deadline = scriptDeadline;
+        std::thread watchdog([this, stopped, cancellation, deadline] {
+            while (!stopped->load(std::memory_order_acquire)) {
+                if (token.isCancelled() || std::chrono::steady_clock::now() >= deadline) {
+                    cancellation->cancel();
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        });
+        ScriptRequest request{step.id, *step.scriptLanguage, *step.scriptCode, timeoutFor(step), workflowData.dump()};
+        const ScriptHostHandler host = [this](const ScriptHostRequest& operation) {
+            Result<ScriptHostResponse> response = handleScriptRequest(operation);
+            if (token.isCancelled()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Cancelled, "script cancelled");
+            }
+            if (std::chrono::steady_clock::now() >= scriptDeadline) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
+            }
+            return response;
+        };
+        Result<ScriptResult> result = deps.scripts->run(request, *scriptCancellation, host);
+        stopped->store(true, std::memory_order_release);
+        watchdog.join();
+        scriptCancellation.reset();
+        scriptDeadline = {};
+        if (token.isCancelled()) return Status::failure(ErrCode::Cancelled, "script cancelled by user");
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return Status::failure(ErrCode::Timeout, "script step timed out");
+        }
+        if (!result.ok()) return Status::failure(result.code, result.detail);
+        return okStatus();
     }
 
     // 剪贴板输入：保存剪贴板 → 写入文本 → Ctrl+V → 等目标读完 → 还原。
@@ -664,6 +954,12 @@ RunReport WorkflowEngine::run(const Workflow& wf, const CancelToken& token,
     }
     if (token.isCancelled()) return run.cancelled("");
 
+    try {
+        run.workflowData = json::parse(wf.initialDataJson);
+    } catch (const std::exception&) {
+        return run.fail(ErrCode::InvalidWorkflow, "", "workflow data is not valid JSON");
+    }
+
     run.setState(ExecutionState::Running);
     run.log(LogLevel::Info, "", "run started: " + wf.name);
 
@@ -681,6 +977,15 @@ RunReport WorkflowEngine::run(const Workflow& wf, const CancelToken& token,
     // 预检：会执行的步骤用到的目标窗口必须存在且未提权，之后才执行第一步
     std::set<std::string> used;
     collectWindows(wf.steps, false, run.rows, run.rowOf, run.first, run.last, used);
+    const bool scriptsSelected = std::any_of(run.rows.begin() + static_cast<std::ptrdiff_t>(run.first),
+                                             run.rows.begin() + static_cast<std::ptrdiff_t>(run.last + 1),
+                                             [](const StepRow& row) { return row.step->type == StepType::Script; });
+    if (scriptsSelected) {
+        for (const auto& [alias, spec] : wf.windows) {
+            (void)spec;
+            used.insert(alias);
+        }
+    }
     for (const auto& [alias, spec] : wf.windows) {
         if (!used.count(alias)) continue;
         Result<std::uint64_t> r = run.resolveWindow(spec);

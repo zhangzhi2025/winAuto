@@ -60,6 +60,46 @@ TEST(read_write_roundtrip_matches_original_json) {
     }
 }
 
+TEST(script_steps_and_initial_data_roundtrip) {
+    const std::string text = R"WORKFLOW({
+      "schemaVersion":"1.0","id":"script","name":"Script workflow",
+      "windows":{"main":{"processName":"app.exe"}},
+      "data":{"count":3,"enabled":true,"nested":[null,{"text":"value"}]},
+      "steps":[
+        {"id":"PY","type":"script","language":"python","code":"data.set('count', 4)"},
+        {"id":"LU","type":"script","language":"lua","code":"data.set('enabled', false)"}
+      ]
+    })WORKFLOW";
+    Workflow wf = mustRead(text);
+    const json source = json::parse(text);
+    CHECK_EQ(wf.steps.size(), size_t(2));
+    CHECK(wf.steps[0].type == StepType::Script);
+    CHECK(wf.steps[0].scriptLanguage == ScriptLanguage::Python);
+    CHECK(wf.steps[1].scriptLanguage == ScriptLanguage::Lua);
+    CHECK_EQ(*wf.steps[0].scriptCode, "data.set('count', 4)");
+    CHECK_EQ(*wf.steps[1].scriptCode, "data.set('enabled', false)");
+    CHECK(json::parse(wf.initialDataJson) == source["data"]);
+
+    const std::string written = writeWorkflow(wf);
+    const json persisted = json::parse(written);
+    CHECK(persisted["data"] == source["data"]);
+    Workflow roundTrip = mustRead(written);
+    CHECK(roundTrip.steps[0].scriptLanguage == ScriptLanguage::Python);
+    CHECK(roundTrip.steps[1].scriptLanguage == ScriptLanguage::Lua);
+    CHECK_EQ(*roundTrip.steps[0].scriptCode, "data.set('count', 4)");
+    CHECK_EQ(*roundTrip.steps[1].scriptCode, "data.set('enabled', false)");
+}
+
+TEST(script_language_values_are_restricted) {
+    auto invalid = readWorkflow(R"({
+      "schemaVersion":"1.0","id":"script","name":"Invalid script",
+      "windows":{"main":{"processName":"app.exe"}},
+      "steps":[{"id":"S1","type":"script","language":"ruby","code":"puts 1"}]
+    })");
+    CHECK(!invalid.ok());
+    CHECK_CONTAINS(invalid.detail, "steps[0].language");
+}
+
 TEST(window_size_conditions_roundtrip_and_are_optional) {
     const std::string text = R"({
       "schemaVersion":"1.0","id":"size","name":"Window size",

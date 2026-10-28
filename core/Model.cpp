@@ -31,6 +31,7 @@ const char* toString(StepType t) {
         case StepType::Wait: return "wait";
         case StepType::WaitForElement: return "wait_for_element";
         case StepType::AssertElement: return "assert_element";
+        case StepType::Script: return "script";
         case StepType::If: return "if";
         case StepType::Repeat: return "repeat";
         case StepType::While: return "while";
@@ -45,7 +46,8 @@ StepType parseStepType(const std::string& s) {
                                    StepType::SetValue,       StepType::InputText,
                                    StepType::Hotkey,         StepType::Wait,
                                    StepType::WaitForElement, StepType::AssertElement,
-                                   StepType::If,             StepType::Repeat,
+                                   StepType::Script,         StepType::If,
+                                   StepType::Repeat,
                                    StepType::While};
     for (StepType t : all) {
         if (s == toString(t)) return t;
@@ -55,9 +57,30 @@ StepType parseStepType(const std::string& s) {
 
 bool isBlockType(StepType t) { return t == StepType::If || t == StepType::Repeat || t == StepType::While; }
 
+const char* toString(ScriptLanguage language) {
+    switch (language) {
+        case ScriptLanguage::Python: return "python";
+        case ScriptLanguage::Lua: return "lua";
+    }
+    return "unknown";
+}
+
+bool parseScriptLanguage(const std::string& s, ScriptLanguage* out) {
+    if (s == "python") {
+        if (out) *out = ScriptLanguage::Python;
+        return true;
+    }
+    if (s == "lua") {
+        if (out) *out = ScriptLanguage::Lua;
+        return true;
+    }
+    return false;
+}
+
 // repeat 不操作任何窗口；if / while 的条件要在某个窗口里定位控件
 bool requiresWindow(StepType t) {
-    return t != StepType::Wait && t != StepType::Repeat && t != StepType::Unknown&& t!=StepType::MouseMove && t!= StepType::MouseClick;
+    return t != StepType::Wait && t != StepType::Repeat && t != StepType::Unknown &&
+           t != StepType::MouseMove && t != StepType::MouseClick && t != StepType::Script;
 }
 
 bool requiresLocator(StepType t) {

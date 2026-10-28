@@ -17,10 +17,18 @@ add_library(winauto_platform STATIC
     Win32ImageLocator.cpp
     Win32Screenshot.cpp
     Win32Clipboard.cpp
+    ScriptWorker.cpp
     WindowGrab.cpp
 )
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(winauto_platform SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 target_link_libraries(winauto_platform PUBLIC winauto_core)
 target_link_libraries(winauto_platform PRIVATE user32 gdi32 dwmapi advapi32 ole32 oleaut32 uuid windowscodecs)
+set(WINAUTO_WORKER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/script_worker")
+file(MAKE_DIRECTORY "${WINAUTO_WORKER_OUTPUT_DIR}")
+configure_file(script_worker/python_worker.py "${WINAUTO_WORKER_OUTPUT_DIR}/python_worker.py" COPYONLY)
+configure_file(script_worker/lua_worker.lua "${WINAUTO_WORKER_OUTPUT_DIR}/lua_worker.lua" COPYONLY)
+target_compile_definitions(winauto_platform PRIVATE
+    WINAUTO_SCRIPT_WORKER_DIR="${WINAUTO_WORKER_OUTPUT_DIR}")
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 等符号需要 Windows 10 1703（RS2）及以上的头文件
 target_compile_definitions(winauto_platform PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00 NTDDI_VERSION=0x0A000003)

@@ -33,7 +33,7 @@ public:
 
     void readRoot(const json& root) {
         if (!root.is_object()) throw ReadError{"", "root must be a JSON object"};
-        noteUnknown(root, {"schemaVersion", "id", "name", "windows", "execution", "steps"}, "");
+        noteUnknown(root, {"schemaVersion", "id", "name", "windows", "execution", "data", "steps"}, "");
 
         wf_.schemaVersion = str(root, "schemaVersion", "", "");
         wf_.id = str(root, "id", "", "");
@@ -47,6 +47,10 @@ public:
         }
         if (const json* e = find(root, "execution")) {
             wf_.execution = readExecution(*e, "execution");
+        }
+        if (const json* data = find(root, "data")) {
+            if (!data->is_object()) throw ReadError{"data", "must be an object"};
+            wf_.initialDataJson = data->dump();
         }
         if (const json* s = find(root, "steps")) {
             if (!s->is_array()) throw ReadError{"steps", "must be an array"};
@@ -302,13 +306,29 @@ private:
         noteUnknown(v,
                     {"id", "type", "window", "locator", "text", "textFrom", "method", "sensitive",
                      "mode", "keys", "durationMs", "timeoutMs", "expect", "retry", "onFailure",
-                     "condition", "times", "maxIterations", "intervalMs", "then", "else", "body"},
+                     "condition", "times", "maxIterations", "intervalMs", "then", "else", "body",
+                     "language", "code"},
                     path);
         Step s;
         s.id = str(v, "id", "", path);
         s.rawType = str(v, "type", "", path);
         s.type = parseStepType(s.rawType);
         s.window = str(v, "window", "", path);
+
+        if (s.type == StepType::Script) {
+            if (find(v, "language")) {
+                ScriptLanguage language{};
+                const std::string value = str(v, "language", "", path);
+                if (!parseScriptLanguage(value, &language)) {
+                    throw ReadError{childPath(path, "language"), "must be \"python\" or \"lua\""};
+                }
+                s.scriptLanguage = language;
+            }
+            if (find(v, "code")) s.scriptCode = str(v, "code", "", path);
+        } else {
+            if (find(v, "language")) wf_.unknownFields.push_back(childPath(path, "language"));
+            if (find(v, "code")) wf_.unknownFields.push_back(childPath(path, "code"));
+        }
 
         if (const json* l = find(v, "locator")) s.locator = readLocator(*l, childPath(path, "locator"));
 
@@ -478,6 +498,10 @@ ojson writeStep(const Step& s) {
     ojson j = ojson::object();
     j["id"] = s.id;
     j["type"] = s.type == StepType::Unknown ? s.rawType : std::string(toString(s.type));
+    if (s.type == StepType::Script) {
+        if (s.scriptLanguage) j["language"] = toString(*s.scriptLanguage);
+        if (s.scriptCode) j["code"] = *s.scriptCode;
+    }
     if (!s.window.empty()) j["window"] = s.window;
     if (s.locator) j["locator"] = writeLocator(*s.locator);
     if (s.type == StepType::Click) j["mode"] = s.clickMode == ClickMode::Auto ? "auto" : "point";
@@ -582,6 +606,7 @@ std::string writeWorkflow(const Workflow& wf, int indent) {
     }
     j["execution"] = exec;
 
+    if (wf.initialDataJson != "{}") j["data"] = json::parse(wf.initialDataJson);
     j["steps"] = writeSteps(wf.steps);
 
     return j.dump(indent);

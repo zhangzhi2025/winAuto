@@ -120,6 +120,10 @@ void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int i
             case StepType::While:
                 os << "当 " << describeCondition(s) << " 时循环，最多 " << s.maxIterations.value_or(0) << " 次";
                 break;
+            case StepType::Script:
+                os << "执行 " << (s.scriptLanguage ? toString(*s.scriptLanguage) : "unknown")
+                   << " 脚本（脚本可执行任意代码；自动化请求仍受宿主授权检查）";
+                break;
             case StepType::Unknown: os << "未知操作 " << s.rawType; break;
         }
         os << "\n";

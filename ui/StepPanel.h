@@ -61,6 +61,8 @@ private:
     QPlainTextEdit* locator_ = nullptr;
     QWidget* locatorBox_ = nullptr;
     QComboBox* clickMode_ = nullptr;
+    QComboBox* scriptLanguage_ = nullptr;
+    QPlainTextEdit* scriptCode_ = nullptr;
     QLineEdit* text_ = nullptr;
     QCheckBox* prompt_ = nullptr;
     QCheckBox* sensitive_ = nullptr;

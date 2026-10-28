@@ -4,6 +4,8 @@
 // 另有两个可选的小接口：IScreenshot（失败截图）、IClipboard（剪贴板输入）。
 // 这些接口的真实实现位于 platform_win/。
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -95,6 +97,38 @@ public:
     virtual std::int64_t nowMs() const = 0;  // 单调时钟
     // 可被取消打断的睡眠；返回 false 表示被取消。
     virtual bool sleepFor(int ms, const CancelToken& token) = 0;
+};
+
+struct ScriptHostRequest {
+    std::uint64_t requestId = 0;
+    std::string operation;
+    std::string argumentsJson;
+};
+
+struct ScriptHostResponse {
+    std::string resultJson;
+};
+
+using ScriptHostHandler = std::function<Result<ScriptHostResponse>(const ScriptHostRequest&)>;
+
+struct ScriptRequest {
+    std::string stepId;
+    ScriptLanguage language = ScriptLanguage::Python;
+    std::string code;
+    int timeoutMs = 0;
+    std::string workflowDataJson;
+};
+
+struct ScriptResult {
+    std::optional<std::string> resultJson;
+    std::string output;
+};
+
+class IScriptRunner {
+public:
+    virtual ~IScriptRunner() = default;
+    virtual Result<ScriptResult> run(const ScriptRequest& request, const CancelToken& token,
+                                     const ScriptHostHandler& host) = 0;
 };
 
 }  // namespace wa

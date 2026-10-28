@@ -13,6 +13,7 @@ set(WINAUTO_TEST_SOURCES
     test_template_match.cpp
     test_path_safety.cpp
     test_flow_control.cpp
+    test_script_runtime.cpp
     test_template_assess.cpp
 )
 

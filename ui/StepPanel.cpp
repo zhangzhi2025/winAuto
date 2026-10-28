@@ -65,6 +65,13 @@ void StepPanel::buildUi() {
     clickMode_->addItem(QStringLiteral("自动（优先 Invoke）"), QStringLiteral("auto"));
     clickMode_->addItem(QStringLiteral("坐标点击"), QStringLiteral("point"));
 
+    scriptLanguage_ = new QComboBox(this);
+    scriptLanguage_->addItem(QStringLiteral("Python"), QStringLiteral("python"));
+    scriptLanguage_->addItem(QStringLiteral("Lua"), QStringLiteral("lua"));
+    scriptCode_ = new QPlainTextEdit(this);
+    scriptCode_->setPlaceholderText(QStringLiteral("输入 Python 或 Lua 脚本"));
+    scriptCode_->setMinimumHeight(150);
+
     text_ = new QLineEdit(this);
     prompt_ = new QCheckBox(QStringLiteral("运行时询问（不保存到文件）"), this);
     sensitive_ = new QCheckBox(QStringLiteral("敏感内容（日志中隐藏）"), this);
@@ -144,6 +151,8 @@ void StepPanel::buildUi() {
     form_->addRow(QStringLiteral("编号"), id_);
     form_->addRow(QStringLiteral("类型"), type_);
     form_->addRow(QStringLiteral("窗口"), window_);
+    form_->addRow(QStringLiteral("脚本语言"), scriptLanguage_);
+    form_->addRow(QStringLiteral("脚本代码"), scriptCode_);
     form_->addRow(QStringLiteral("条件"), condType_);
     form_->addRow(QStringLiteral("条件定位器"), condBox_);
     form_->addRow(QStringLiteral("重复次数"), times_);
@@ -176,6 +185,7 @@ void StepPanel::buildUi() {
     connect(id_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
     connect(window_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(clickMode_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
+    connect(scriptLanguage_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(method_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(onFailure_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(text_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
@@ -199,6 +209,7 @@ void StepPanel::buildUi() {
     connect(locator_, &QPlainTextEdit::textChanged, locTimer, QOverload<>::of(&QTimer::start));
     connect(expect_, &QPlainTextEdit::textChanged, locTimer, QOverload<>::of(&QTimer::start));
     connect(cond_, &QPlainTextEdit::textChanged, locTimer, QOverload<>::of(&QTimer::start));
+    connect(scriptCode_, &QPlainTextEdit::textChanged, locTimer, QOverload<>::of(&QTimer::start));
     connect(locTimer, &QTimer::timeout, this, &StepPanel::onFormChanged);
     connect(pick, &QPushButton::clicked, this, [this] { emit pickRequested(TargetLocator); });
     connect(pickExpect, &QPushButton::clicked, this, [this] { emit pickRequested(TargetExpect); });
@@ -242,6 +253,8 @@ void StepPanel::setStep(const wa::Step& step, const std::vector<std::string>& al
 
     locator_->setPlainText(step.locator ? qs(wa::locatorToJson(*step.locator)) : QString());
     clickMode_->setCurrentIndex(step.clickMode == wa::ClickMode::Point ? 1 : 0);
+    scriptLanguage_->setCurrentIndex(step.scriptLanguage == wa::ScriptLanguage::Lua ? 1 : 0);
+    scriptCode_->setPlainText(step.scriptCode ? qs(*step.scriptCode) : QString());
     text_->setText(step.text ? qs(*step.text) : QString());
     prompt_->setChecked(step.textFromPrompt);
     sensitive_->setChecked(step.sensitive);
@@ -297,10 +310,13 @@ void StepPanel::updateVisibility() {
     const bool isIf = t == StepType::If;
     const bool isWhile = t == StepType::While;
     const bool isRepeat = t == StepType::Repeat;
+    const bool isScript = t == StepType::Script;
     const bool cond = isIf || isWhile;
     const bool block = cond || isRepeat;
 
     setRowVisible(window_, !waits && !isRepeat);
+    setRowVisible(scriptLanguage_, isScript);
+    setRowVisible(scriptCode_, isScript);
     setRowVisible(condType_, cond);
     setRowVisible(condBox_, cond);
     setRowVisible(times_, isRepeat);
@@ -340,6 +356,25 @@ bool StepPanel::collect(wa::Step& out) {
     out.window = stdStr(window_->currentData().toString());
 
     const StepType t = step_.type;
+    if (t == StepType::Script) {
+        out.window.clear();
+        out.scriptLanguage = scriptLanguage_->currentData().toString() == QLatin1String("lua")
+                                 ? wa::ScriptLanguage::Lua
+                                 : wa::ScriptLanguage::Python;
+        out.scriptCode = stdStr(scriptCode_->toPlainText());
+        if (timeout_->value() > 0) out.timeoutMs = timeout_->value();
+        else out.timeoutMs.reset();
+        if (retryTimes_->value() > 0) {
+            out.retry = wa::RetryPolicy{retryTimes_->value(), retryInterval_->value()};
+        } else {
+            out.retry.reset();
+        }
+        const QString failure = onFailure_->currentData().toString();
+        if (failure == QLatin1String("stop")) out.onFailure = wa::FailurePolicy::Stop;
+        else if (failure == QLatin1String("continue")) out.onFailure = wa::FailurePolicy::Continue;
+        else out.onFailure.reset();
+        return true;
+    }
     if (t == StepType::Click || t == StepType::SetValue || t == StepType::WaitForElement ||
         t == StepType::AssertElement) {
         const QString text = locator_->toPlainText().trimmed();

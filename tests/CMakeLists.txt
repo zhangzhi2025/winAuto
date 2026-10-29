@@ -38,7 +38,8 @@ add_test(NAME cli_validate_examples
                 ${CMAKE_SOURCE_DIR}/examples/notepad-coordinates-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/flow-control-demo.json
-                ${CMAKE_SOURCE_DIR}/examples/mouse-demo.json)
+                ${CMAKE_SOURCE_DIR}/examples/mouse-demo.json
+                ${CMAKE_SOURCE_DIR}/examples/launch-program-demo.json)
 add_test(NAME cli_rejects_invalid_workflow
     COMMAND winauto-cli validate ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/invalid-empty.json)
 set_tests_properties(cli_rejects_invalid_workflow PROPERTIES WILL_FAIL TRUE)
@@ -54,6 +55,7 @@ if(Python3_Interpreter_FOUND)
                 ${CMAKE_SOURCE_DIR}/examples/notepad-coordinates-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/image-fallback-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/flow-control-demo.json
-                ${CMAKE_SOURCE_DIR}/examples/mouse-demo.json)
+                ${CMAKE_SOURCE_DIR}/examples/mouse-demo.json
+                ${CMAKE_SOURCE_DIR}/examples/launch-program-demo.json)
     set_tests_properties(schema_examples PROPERTIES SKIP_RETURN_CODE 77)
 endif()

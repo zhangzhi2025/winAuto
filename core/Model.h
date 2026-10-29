@@ -96,6 +96,7 @@ enum class StepType {
     WaitForElement,
     AssertElement,
     Script,
+    LaunchProgram,
     // ---- 流程控制（块语句，带子步骤）
     If,      // condition 成立执行 body（JSON: then），否则执行 elseBody（JSON: else）
     Repeat,  // 固定次数循环 body
@@ -156,6 +157,8 @@ struct Step {
 
     std::optional<ScriptLanguage> scriptLanguage;
     std::optional<std::string> scriptCode;
+    std::string programPath;
+    std::string arguments;
 
     std::optional<int> timeoutMs;
     std::optional<Expect> expect;

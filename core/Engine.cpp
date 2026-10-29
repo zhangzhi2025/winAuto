@@ -156,6 +156,50 @@ struct WorkflowEngine::Run {
         }
     }
 
+    Status launchProgram(const Step& step) {
+        if (!deps.processes) {
+            return Status::failure(ErrCode::Unsupported, "no process launcher is available");
+        }
+        Result<std::uint32_t> started = deps.processes->launch(step.programPath, step.arguments);
+        if (!started.ok()) return failAs<Unit>(started);
+        if (started.value == 0) {
+            return Status::failure(ErrCode::Internal, "process launcher returned an invalid process ID");
+        }
+
+        const int timeoutMs = timeoutFor(step);
+        const std::int64_t start = deps.clock->nowMs();
+        for (;;) {
+            if (token.isCancelled()) return Status::failure(ErrCode::Cancelled);
+            std::vector<WindowInfo> matches;
+            for (const WindowInfo& window : deps.windows->enumerateWindows()) {
+                if (window.processId == started.value) matches.push_back(window);
+            }
+            if (matches.size() > 1) {
+                return Status::failure(ErrCode::WindowNotFound,
+                                       "launched process has multiple visible windows; refusing to choose one");
+            }
+            if (matches.size() == 1) {
+                if (matches.front().elevated && !deps.windows->isSelfElevated()) {
+                    return Status::failure(ErrCode::WindowElevated,
+                                           "launched program runs with higher privileges; automation is refused");
+                }
+                handles[step.window] = matches.front().handle;
+                log(LogLevel::Info, step.id, "launched program window bound to \"" + step.window + "\"");
+                return okStatus();
+            }
+            const std::int64_t remaining = timeoutMs - (deps.clock->nowMs() - start);
+            if (remaining <= 0) {
+                return Status::failure(ErrCode::Timeout,
+                                       "no visible window appeared for the launched process within " +
+                                           std::to_string(timeoutMs) + " ms");
+            }
+            if (!deps.clock->sleepFor(static_cast<int>(std::min<std::int64_t>(kPollIntervalMs, remaining)),
+                                      token)) {
+                return Status::failure(ErrCode::Cancelled);
+            }
+        }
+    }
+
     // ------------------------------------------------------------ 定位
     // 单次定位。fallback 规则：
     //   - ElementNotFound：试下一个
@@ -300,6 +344,9 @@ struct WorkflowEngine::Run {
 
             case StepType::Script:
                 return runScript(s);
+
+            case StepType::LaunchProgram:
+                return launchProgram(s);
 
             case StepType::Unknown:
                 break;
@@ -861,7 +908,7 @@ struct WorkflowEngine::Run {
         }
 
         const RetryPolicy retry = s.retry.value_or(wf.execution.retry);
-        const int maxAttempts = 1 + std::max(0, retry.times);
+        const int maxAttempts = s.type == StepType::LaunchProgram ? 1 : 1 + std::max(0, retry.times);
 
         std::uint64_t handle = 0;
         if (requiresWindow(s.type)) handle = handles[s.window];
@@ -986,8 +1033,24 @@ RunReport WorkflowEngine::run(const Workflow& wf, const CancelToken& token,
             used.insert(alias);
         }
     }
+    std::map<std::string, size_t> launchRows;
+    for (size_t i = 0; i < run.rows.size(); ++i) {
+        const Step& step = *run.rows[i].step;
+        if (step.type == StepType::LaunchProgram && !step.window.empty()) {
+            launchRows.emplace(step.window, i);
+        }
+    }
     for (const auto& [alias, spec] : wf.windows) {
         if (!used.count(alias)) continue;
+        if (spec.processName.empty() && spec.titleContains.empty() && spec.processId.empty() &&
+            spec.width.empty() && spec.height.empty()) {
+            const auto launch = launchRows.find(alias);
+            if (launch == launchRows.end() || launch->second < run.first || launch->second > run.last) {
+                return run.fail(ErrCode::InvalidWorkflow, "",
+                                "window \"" + alias + "\" is blank; include its launch_program step in the selected range");
+            }
+            continue;
+        }
         Result<std::uint64_t> r = run.resolveWindow(spec);
         if (r.code == ErrCode::Cancelled) return run.cancelled("");
         if (!r.ok()) {

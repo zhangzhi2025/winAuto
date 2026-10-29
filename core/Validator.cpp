@@ -365,6 +365,55 @@ public:
             error(path, "script_fields_not_allowed", "language and code are only valid on script steps");
         }
 
+        if (s.type == StepType::LaunchProgram) {
+            warn(path, "launch_program",
+                 "this step starts an executable with the application's user privileges; inspect the program before running",
+                 /*confirm=*/true);
+            if (s.programPath.empty()) {
+                error(sub(path, "programPath"), "missing_field", "programPath is required");
+            } else if (s.programPath.size() > 32767 || s.programPath.find('\0') != std::string::npos) {
+                error(sub(path, "programPath"), "bad_program_path", "programPath is invalid or too long");
+            }
+            if (s.arguments.size() > 32767 || s.arguments.find('\0') != std::string::npos) {
+                error(sub(path, "arguments"), "bad_arguments", "arguments are invalid or too long");
+            }
+            if (depth != 0) {
+                error(path, "launch_nested", "launch_program must be a top-level step");
+            }
+            if (s.window.empty()) {
+                error(sub(path, "window"), "missing_field",
+                      "launch_program requires a window alias to bind the new process to");
+            } else {
+                const auto target = wf.windows.find(s.window);
+                if (target == wf.windows.end()) {
+                    error(sub(path, "window"), "unknown_window",
+                          "window alias \"" + s.window + "\" is not defined in windows");
+                } else if (!target->second.processName.empty() || !target->second.titleContains.empty() ||
+                           !target->second.processId.empty() || !target->second.width.empty() ||
+                           !target->second.height.empty()) {
+                    error(sub(path, "window"), "launch_target_not_blank",
+                          "launch_program must bind to a blank window entry");
+                }
+            }
+            if (s.retry) {
+                error(sub(path, "retry"), "launch_no_retry",
+                      "launch_program cannot be retried because retries could start duplicate processes");
+            }
+            if (s.expect) {
+                error(sub(path, "expect"), "launch_field_not_allowed",
+                      "launch_program does not support expect");
+            }
+            if (s.locator || s.text || s.textFromPrompt || s.sensitive || !s.keys.empty() ||
+                s.durationMs || s.condition || s.times || s.maxIterations || s.intervalMs ||
+                !s.body.empty() || !s.elseBody.empty()) {
+                error(path, "launch_field_not_allowed",
+                      "launch_program only supports programPath, arguments, window, timeoutMs, and onFailure");
+            }
+        } else if (!s.programPath.empty() || !s.arguments.empty()) {
+            error(path, "launch_fields_not_allowed",
+                  "programPath and arguments are only valid on launch_program steps");
+        }
+
         if (requiresWindow(s.type)) {
             if (s.window.empty()) {
                 error(sub(path, "window"), "missing_field", "window alias is required");
@@ -531,10 +580,18 @@ ValidationReport validateWorkflow(const Workflow& wf) {
     if (wf.windows.empty()) {
         c.error("windows", "missing_field", "at least one window must be defined");
     }
+    std::set<std::string> launchedAliases;
+    for (const StepRow& row : flattenSteps(wf)) {
+        if (row.step->type == StepType::LaunchProgram && !row.step->window.empty()) {
+            launchedAliases.insert(row.step->window);
+        }
+    }
     for (const auto& [alias, spec] : wf.windows) {
         const std::string p = "windows." + alias;
         if (alias.empty()) c.error("windows", "bad_alias", "window alias must not be empty");
-        if (spec.processName.empty() && spec.titleContains.empty() && spec.processId.empty()) {
+        if (spec.processName.empty() && spec.titleContains.empty() && spec.processId.empty() &&
+            spec.width.empty() && spec.height.empty() &&
+            !launchedAliases.count(alias)) {
             c.error(p, "missing_field",
                     "window needs processName, titleContains, or processId (refusing to match any window)");
         }
@@ -556,6 +613,31 @@ ValidationReport validateWorkflow(const Workflow& wf) {
     }
     std::set<std::string> seenIds;
     c.checkSteps(wf, wf.steps, "steps", 0, seenIds);
+
+    std::map<std::string, size_t> launchCounts;
+    std::set<std::string> activeLaunches;
+    for (const StepRow& row : flattenSteps(wf)) {
+        const Step& step = *row.step;
+        if (step.type == StepType::LaunchProgram) {
+            if (!step.window.empty()) {
+                const size_t count = ++launchCounts[step.window];
+                if (count > 1) {
+                    c.error(row.path + ".window", "duplicate_launch_target",
+                            "each blank window alias can be assigned by only one launch_program step");
+                }
+                activeLaunches.insert(step.window);
+            }
+        } else if (requiresWindow(step.type) && !step.window.empty()) {
+            const auto spec = wf.windows.find(step.window);
+            if (spec != wf.windows.end() &&
+                spec->second.processName.empty() && spec->second.titleContains.empty() &&
+                spec->second.processId.empty() && spec->second.width.empty() &&
+                spec->second.height.empty() && !activeLaunches.count(step.window)) {
+                c.error(row.path + ".window", "launch_before_window_use",
+                        "the blank window alias must be launched before it is used");
+            }
+        }
+    }
 
     c.range(wf.execution.maxStepExecutions, 1, kMaxStepExecutionsLimit, "execution.maxStepExecutions",
             "maxStepExecutions");

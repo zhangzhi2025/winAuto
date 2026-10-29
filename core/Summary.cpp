@@ -124,6 +124,9 @@ void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int i
                 os << "执行 " << (s.scriptLanguage ? toString(*s.scriptLanguage) : "unknown")
                    << " 脚本（脚本可执行任意代码；自动化请求仍受宿主授权检查）";
                 break;
+            case StepType::LaunchProgram:
+                os << "启动程序 " << s.programPath << "，等待窗口绑定到 " << s.window;
+                break;
             case StepType::Unknown: os << "未知操作 " << s.rawType; break;
         }
         os << "\n";
@@ -155,6 +158,14 @@ std::string summarizeWorkflow(const Workflow& wf, const ValidationReport& report
         }
         if (!spec.processId.empty()) {
             os << (hasCondition ? "，" : "") << "PID " << spec.processId;
+            hasCondition = true;
+        }
+        if (!spec.width.empty() || !spec.height.empty()) {
+            os << (hasCondition ? "，" : "") << "尺寸 " << spec.width << "×" << spec.height;
+            hasCondition = true;
+        }
+        if (!hasCondition) {
+            os << "由 launch_program 步骤按新进程 PID 绑定";
         }
         os << "\n";
     }

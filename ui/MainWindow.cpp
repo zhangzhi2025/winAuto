@@ -51,7 +51,7 @@ const wa::StepType kStepTypes[] = {wa::StepType::ActivateWindow, wa::StepType::C
                                    wa::StepType::SetValue,       wa::StepType::InputText,
                                    wa::StepType::Hotkey,         wa::StepType::Wait,
                                    wa::StepType::WaitForElement, wa::StepType::AssertElement,
-                                   wa::StepType::Script,
+                                   wa::StepType::Script,         wa::StepType::LaunchProgram,
                                    wa::StepType::If,             wa::StepType::Repeat,
                                    wa::StepType::While};
 
@@ -66,6 +66,7 @@ QString typeLabel(wa::StepType t) {
         case wa::StepType::WaitForElement: return QStringLiteral("等待控件");
         case wa::StepType::AssertElement: return QStringLiteral("断言控件");
         case wa::StepType::Script: return QStringLiteral("脚本");
+        case wa::StepType::LaunchProgram: return QStringLiteral("启动程序");
         case wa::StepType::If: return QStringLiteral("如果");
         case wa::StepType::Repeat: return QStringLiteral("重复");
         case wa::StepType::While: return QStringLiteral("当…时循环");
@@ -143,6 +144,7 @@ void MainWindow::buildMenus() {
     addIntoMenu_ = edit->addMenu(QStringLiteral("添加到所选块内（如果/重复/循环体）"));
     addElseMenu_ = edit->addMenu(QStringLiteral("添加到所选 if 的\"否则\"分支"));
     for (wa::StepType t : kStepTypes) {
+        if (t == wa::StepType::LaunchProgram) continue;
         const int type = static_cast<int>(t);
         addIntoMenu_->addAction(typeLabel(t), this, [this, type] { addStepIntoBlock(type, false); });
         addElseMenu_->addAction(typeLabel(t), this, [this, type] { addStepIntoBlock(type, true); });

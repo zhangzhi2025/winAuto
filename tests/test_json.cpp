@@ -90,6 +90,29 @@ TEST(script_steps_and_initial_data_roundtrip) {
     CHECK_EQ(*roundTrip.steps[1].scriptCode, "data.set('enabled', false)");
 }
 
+TEST(launch_program_step_roundtrips_with_blank_window_binding) {
+    const std::string text = R"({
+      "schemaVersion":"1.0","id":"launch","name":"Launch workflow",
+      "windows":{"app":{}},
+      "steps":[
+        {"id":"START","type":"launch_program","programPath":"C:\\apps\\sample.exe",
+         "arguments":"--open","window":"app","timeoutMs":12000},
+        {"id":"USE","type":"activate_window","window":"app"}
+      ]
+    })";
+    Workflow wf = mustRead(text);
+    CHECK(wf.steps[0].type == StepType::LaunchProgram);
+    CHECK_EQ(wf.steps[0].programPath, "C:\\apps\\sample.exe");
+    CHECK_EQ(wf.steps[0].arguments, "--open");
+    CHECK_EQ(wf.steps[0].window, "app");
+    CHECK(validateWorkflow(wf).ok());
+    const std::string written = writeWorkflow(wf);
+    Workflow roundTrip = mustRead(written);
+    CHECK_EQ(roundTrip.steps[0].programPath, "C:\\apps\\sample.exe");
+    CHECK_EQ(roundTrip.steps[0].arguments, "--open");
+    CHECK_EQ(roundTrip.steps[0].window, "app");
+}
+
 TEST(script_language_values_are_restricted) {
     auto invalid = readWorkflow(R"({
       "schemaVersion":"1.0","id":"script","name":"Invalid script",

@@ -40,6 +40,8 @@ automation.activate_window("main")
 
 Scripts execute arbitrary code as the current user. The process boundary manages interpreter lifetime and failure; it is not a sandbox. Review the script and confirm the explicit trust warning before running. Only brokered automation operations are provided by the protocol.
 
+Workflows can also use a `launch_program` step to start an executable and bind its unique visible window to a blank alias, selected by the new process ID. The step must be top-level and precede any steps that use that alias; it requires explicit trust confirmation. See `examples/launch-program-demo.json`.
+
 ## Validation scenarios
 
 1. **Persistence and validation**: create a workflow with a Python step and a Lua step; validate it, save/reopen it, and confirm each language and source are preserved. Empty or whitespace-only code and unsupported language values must fail validation with a path to the offending field.

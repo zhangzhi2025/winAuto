@@ -2,6 +2,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -45,6 +46,15 @@ void StepPanel::buildUi() {
     id_ = new QLineEdit(this);
     type_ = new QLabel(this);
     window_ = new QComboBox(this);
+    programPath_ = new QLineEdit(this);
+    programPathBox_ = new QWidget(this);
+    auto* programPathLayout = new QHBoxLayout(programPathBox_);
+    programPathLayout->setContentsMargins(0, 0, 0, 0);
+    auto* browseProgram = new QPushButton(QStringLiteral("浏览…"), programPathBox_);
+    programPathLayout->addWidget(programPath_);
+    programPathLayout->addWidget(browseProgram);
+    programArguments_ = new QLineEdit(this);
+    programArguments_->setPlaceholderText(QStringLiteral("可选，传给程序的命令行参数"));
 
     locator_ = new QPlainTextEdit(this);
     locator_->setPlaceholderText(QStringLiteral("定位器 JSON；可点\"拾取控件\"自动生成"));
@@ -151,6 +161,8 @@ void StepPanel::buildUi() {
     form_->addRow(QStringLiteral("编号"), id_);
     form_->addRow(QStringLiteral("类型"), type_);
     form_->addRow(QStringLiteral("窗口"), window_);
+    form_->addRow(QStringLiteral("程序路径"), programPathBox_);
+    form_->addRow(QStringLiteral("启动参数"), programArguments_);
     form_->addRow(QStringLiteral("脚本语言"), scriptLanguage_);
     form_->addRow(QStringLiteral("脚本代码"), scriptCode_);
     form_->addRow(QStringLiteral("条件"), condType_);
@@ -184,6 +196,15 @@ void StepPanel::buildUi() {
 
     connect(id_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
     connect(window_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
+    connect(programPath_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
+    connect(programArguments_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
+    connect(browseProgram, &QPushButton::clicked, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择要启动的程序"));
+        if (!path.isEmpty()) {
+            programPath_->setText(path);
+            onFormChanged();
+        }
+    });
     connect(clickMode_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(scriptLanguage_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(method_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
@@ -240,6 +261,8 @@ void StepPanel::setStep(const wa::Step& step, const std::vector<std::string>& al
 
     id_->setText(qs(step.id));
     type_->setText(qs(step.rawType.empty() ? wa::toString(step.type) : step.rawType));
+    programPath_->setText(qs(step.programPath));
+    programArguments_->setText(qs(step.arguments));
 
     window_->clear();
     window_->addItem(QStringLiteral("（无）"), QString());
@@ -311,10 +334,17 @@ void StepPanel::updateVisibility() {
     const bool isWhile = t == StepType::While;
     const bool isRepeat = t == StepType::Repeat;
     const bool isScript = t == StepType::Script;
+    const bool isLaunch = t == StepType::LaunchProgram;
     const bool cond = isIf || isWhile;
     const bool block = cond || isRepeat;
 
     setRowVisible(window_, !waits && !isRepeat);
+    if (QWidget* label = form_->labelForField(window_)) {
+        static_cast<QLabel*>(label)->setText(isLaunch ? QStringLiteral("启动后绑定窗口")
+                                                      : QStringLiteral("窗口"));
+    }
+    setRowVisible(programPathBox_, isLaunch);
+    setRowVisible(programArguments_, isLaunch);
     setRowVisible(scriptLanguage_, isScript);
     setRowVisible(scriptCode_, isScript);
     setRowVisible(condType_, cond);
@@ -333,14 +363,16 @@ void StepPanel::updateVisibility() {
     // if / while 的"超时"是等条件成立的最长时间；0 表示只检查一次
     timeout_->setSpecialValueText(cond ? QStringLiteral("只检查一次") : QStringLiteral("使用流程默认值"));
     if (QWidget* label = form_->labelForField(timeout_)) {
-        static_cast<QLabel*>(label)->setText(cond ? QStringLiteral("最多等条件成立") : QStringLiteral("超时"));
+        static_cast<QLabel*>(label)->setText(isLaunch ? QStringLiteral("等待窗口超时")
+                                                      : cond ? QStringLiteral("最多等条件成立")
+                                                             : QStringLiteral("超时"));
     }
-    setRowVisible(timeout_, locatorStep || cond);
+    setRowVisible(timeout_, locatorStep || cond || isLaunch);
     // expect / retry 只属于叶子步骤；块语句把它们放在块内的步骤上
-    setRowVisible(expectOn_, !waits && !block);
-    setRowVisible(expectBox_, !waits && !block && expectOn_->isChecked());
-    setRowVisible(retryTimes_, !block);
-    setRowVisible(retryInterval_, !block);
+    setRowVisible(expectOn_, !waits && !block && !isLaunch);
+    setRowVisible(expectBox_, !waits && !block && !isLaunch && expectOn_->isChecked());
+    setRowVisible(retryTimes_, !block && !isLaunch);
+    setRowVisible(retryInterval_, !block && !isLaunch);
     text_->setEnabled(!prompt_->isChecked());
 }
 
@@ -369,6 +401,31 @@ bool StepPanel::collect(wa::Step& out) {
         } else {
             out.retry.reset();
         }
+        const QString failure = onFailure_->currentData().toString();
+        if (failure == QLatin1String("stop")) out.onFailure = wa::FailurePolicy::Stop;
+        else if (failure == QLatin1String("continue")) out.onFailure = wa::FailurePolicy::Continue;
+        else out.onFailure.reset();
+        return true;
+    }
+    if (t == StepType::LaunchProgram) {
+        out.programPath = stdStr(programPath_->text().trimmed());
+        out.arguments = stdStr(programArguments_->text());
+        out.locator.reset();
+        out.text.reset();
+        out.textFromPrompt = false;
+        out.sensitive = false;
+        out.keys.clear();
+        out.durationMs.reset();
+        out.scriptLanguage.reset();
+        out.scriptCode.reset();
+        out.expect.reset();
+        out.retry.reset();
+        out.condition.reset();
+        out.times.reset();
+        out.maxIterations.reset();
+        out.intervalMs.reset();
+        if (timeout_->value() > 0) out.timeoutMs = timeout_->value();
+        else out.timeoutMs.reset();
         const QString failure = onFailure_->currentData().toString();
         if (failure == QLatin1String("stop")) out.onFailure = wa::FailurePolicy::Stop;
         else if (failure == QLatin1String("continue")) out.onFailure = wa::FailurePolicy::Continue;

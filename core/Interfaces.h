@@ -131,4 +131,11 @@ public:
                                      const ScriptHostHandler& host) = 0;
 };
 
+class IProcessLauncher {
+public:
+    virtual ~IProcessLauncher() = default;
+    virtual Result<std::uint32_t> launch(const std::string& programPath,
+                                         const std::string& arguments) = 0;
+};
+
 }  // namespace wa

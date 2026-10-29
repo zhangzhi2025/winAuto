@@ -307,7 +307,7 @@ private:
                     {"id", "type", "window", "locator", "text", "textFrom", "method", "sensitive",
                      "mode", "keys", "durationMs", "timeoutMs", "expect", "retry", "onFailure",
                      "condition", "times", "maxIterations", "intervalMs", "then", "else", "body",
-                     "language", "code"},
+                     "language", "code", "programPath", "arguments"},
                     path);
         Step s;
         s.id = str(v, "id", "", path);
@@ -325,9 +325,14 @@ private:
                 s.scriptLanguage = language;
             }
             if (find(v, "code")) s.scriptCode = str(v, "code", "", path);
+        } else if (s.type == StepType::LaunchProgram) {
+            s.programPath = str(v, "programPath", "", path);
+            s.arguments = str(v, "arguments", "", path);
         } else {
             if (find(v, "language")) wf_.unknownFields.push_back(childPath(path, "language"));
             if (find(v, "code")) wf_.unknownFields.push_back(childPath(path, "code"));
+            if (find(v, "programPath")) wf_.unknownFields.push_back(childPath(path, "programPath"));
+            if (find(v, "arguments")) wf_.unknownFields.push_back(childPath(path, "arguments"));
         }
 
         if (const json* l = find(v, "locator")) s.locator = readLocator(*l, childPath(path, "locator"));
@@ -501,6 +506,10 @@ ojson writeStep(const Step& s) {
     if (s.type == StepType::Script) {
         if (s.scriptLanguage) j["language"] = toString(*s.scriptLanguage);
         if (s.scriptCode) j["code"] = *s.scriptCode;
+    }
+    if (s.type == StepType::LaunchProgram) {
+        j["programPath"] = s.programPath;
+        if (!s.arguments.empty()) j["arguments"] = s.arguments;
     }
     if (!s.window.empty()) j["window"] = s.window;
     if (s.locator) j["locator"] = writeLocator(*s.locator);

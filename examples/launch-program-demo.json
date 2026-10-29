@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-LAUNCH-DEMO",
+  "name": "启动程序并绑定窗口",
+  "windows": {
+    "main": {}
+  },
+  "execution": {
+    "stepTimeoutMs": 10000,
+    "onFailure": "stop",
+    "retry": { "times": 0, "intervalMs": 500 }
+  },
+  "steps": [
+    {
+      "id": "START",
+      "type": "launch_program",
+      "programPath": "C:\\Windows\\System32\\notepad.exe",
+      "window": "main",
+      "timeoutMs": 10000
+    },
+    {
+      "id": "ACTIVATE",
+      "type": "activate_window",
+      "window": "main"
+    }
+  ]
+}

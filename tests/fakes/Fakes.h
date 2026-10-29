@@ -76,6 +76,19 @@ struct FakeWindowProvider : IWindowProvider {
     bool isSelfElevated() override { return selfElevated; }
 };
 
+struct FakeProcessLauncher : IProcessLauncher {
+    std::function<Result<std::uint32_t>(const std::string&, const std::string&)> handler;
+    std::vector<std::pair<std::string, std::string>> launches;
+    std::uint32_t processId = 1234;
+
+    Result<std::uint32_t> launch(const std::string& programPath,
+                                 const std::string& arguments) override {
+        launches.emplace_back(programPath, arguments);
+        return handler ? handler(programPath, arguments)
+                       : Result<std::uint32_t>::success(processId);
+    }
+};
+
 struct FakeElementLocator : IElementLocator {
     // handler 决定每次 locate 的结果；callIndex 从 0 开始，计所有调用
     std::function<Result<ElementRef>(const LeafLocator&, int callIndex)> handler;

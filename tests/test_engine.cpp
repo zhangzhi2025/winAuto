@@ -17,6 +17,7 @@ struct Env {
     FakeWindowProvider windows;
     FakeElementLocator locator;
     FakeInputController input;
+    FakeProcessLauncher processes;
     CancelToken token;
     PromptFn prompt;
     EngineObserver observer;
@@ -30,6 +31,7 @@ struct Env {
         deps.locator = &locator;
         deps.input = &input;
         deps.clock = &clock;
+        deps.processes = &processes;
         deps.prompt = prompt;
         deps.observer = observer;
         deps.beforeStep = gate;
@@ -78,6 +80,97 @@ TEST(runs_all_steps_in_order_and_records_timing) {
     CHECK_EQ(r.steps[4].durationMs, 250);       // wait 步骤耗时来自（虚拟）时钟
     CHECK(r.steps[4].startMs >= r.steps[3].startMs);
     CHECK_EQ(r.steps[0].attempts, 1);
+}
+
+TEST(launch_program_binds_the_unique_window_from_its_process) {
+    Env env;
+    env.windows.windows.clear();
+    env.processes.handler = [&env](const std::string& path, const std::string& args) {
+        CHECK_EQ(path, "C:\\apps\\sample.exe");
+        CHECK_EQ(args, "--open");
+        WindowInfo launched = FakeWindowProvider::window(42, "sample.exe", "Ready");
+        launched.processId = 1234;
+        env.windows.windows.push_back(launched);
+        return Result<std::uint32_t>::success(1234);
+    };
+    Workflow wf = flow({Step{}, step("ACTIVATE", StepType::ActivateWindow)});
+    wf.steps[0].id = "LAUNCH";
+    wf.steps[0].type = StepType::LaunchProgram;
+    wf.steps[0].window = "main";
+    wf.steps[0].programPath = "C:\\apps\\sample.exe";
+    wf.steps[0].arguments = "--open";
+    wf.steps[0].timeoutMs = 300;
+    wf.steps[1].window = "main";
+    wf.windows["main"] = WindowSpec{};
+
+    RunOptions options;
+    options.confirmedRisks = true;
+    const RunReport report = env.run(wf, options);
+    CHECK(report.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.processes.launches.size(), size_t(1));
+    CHECK_EQ(env.windows.activated.size(), size_t(1));
+    CHECK_EQ(env.windows.activated.front(), std::uint64_t(42));
+}
+
+TEST(launch_program_refuses_ambiguous_windows_and_times_out_if_none_appear) {
+    RunOptions options;
+    options.confirmedRisks = true;
+    {
+        Env env;
+        Workflow wf = flow({Step{}});
+        wf.steps[0].id = "LAUNCH";
+        wf.steps[0].type = StepType::LaunchProgram;
+        wf.steps[0].window = "main";
+        wf.steps[0].programPath = "sample.exe";
+        wf.steps[0].timeoutMs = 200;
+        wf.windows["main"] = WindowSpec{};
+        env.processes.handler = [&env](const std::string&, const std::string&) {
+            for (std::uint64_t handle : {42u, 43u}) {
+                WindowInfo launched = FakeWindowProvider::window(handle, "sample.exe", "Ready");
+                launched.processId = 1234;
+                env.windows.windows.push_back(launched);
+            }
+            return Result<std::uint32_t>::success(1234);
+        };
+        const RunReport report = env.run(wf, options);
+        CHECK(report.state == ExecutionState::Failed);
+        CHECK(report.steps[0].code == ErrCode::WindowNotFound);
+        CHECK_CONTAINS(report.steps[0].detail, "multiple visible windows");
+    }
+    {
+        Env env;
+        Workflow wf = flow({Step{}});
+        wf.steps[0].id = "LAUNCH";
+        wf.steps[0].type = StepType::LaunchProgram;
+        wf.steps[0].window = "main";
+        wf.steps[0].programPath = "sample.exe";
+        wf.steps[0].timeoutMs = 200;
+        wf.windows["main"] = WindowSpec{};
+        const RunReport report = env.run(wf, options);
+        CHECK(report.state == ExecutionState::Failed);
+        CHECK(report.steps[0].code == ErrCode::Timeout);
+        CHECK_EQ(env.clock.now, 1200);
+    }
+}
+
+TEST(selected_range_must_include_the_launch_step_for_a_blank_window) {
+    Env env;
+    Workflow wf = flow({Step{}, step("ACTIVATE", StepType::ActivateWindow)});
+    wf.steps[0].id = "LAUNCH";
+    wf.steps[0].type = StepType::LaunchProgram;
+    wf.steps[0].window = "main";
+    wf.steps[0].programPath = "sample.exe";
+    wf.steps[1].window = "main";
+    wf.windows["main"] = WindowSpec{};
+    RunOptions options;
+    options.firstStep = 1;
+    options.lastStep = 1;
+    options.confirmedRisks = true;
+
+    const RunReport report = env.run(wf, options);
+    CHECK(report.state == ExecutionState::Failed);
+    CHECK(report.code == ErrCode::InvalidWorkflow);
+    CHECK_EQ(env.processes.launches.size(), size_t(0));
 }
 
 TEST(failing_step_stops_the_run_and_reports_step_id_and_code) {

@@ -48,6 +48,34 @@ TEST(script_steps_require_supported_language_and_nonempty_code) {
     CHECK(check(wf).find("missing_field", "steps[1].code") != nullptr);
 }
 
+TEST(launch_program_requires_a_blank_window_and_precedes_its_use) {
+    Workflow wf = minimalWorkflow();
+    wf.windows["main"] = WindowSpec{};
+    Step launch;
+    launch.id = "START";
+    launch.type = StepType::LaunchProgram;
+    launch.programPath = "sample.exe";
+    launch.window = "main";
+    Step activate;
+    activate.id = "USE";
+    activate.type = StepType::ActivateWindow;
+    activate.window = "main";
+    wf.steps = {launch, activate};
+    CHECK(check(wf).ok());
+    CHECK(check(wf).needsConfirmation());
+
+    std::swap(wf.steps[0], wf.steps[1]);
+    CHECK(check(wf).has("launch_before_window_use"));
+
+    wf.steps = {launch};
+    wf.windows["main"].processName = "already-set.exe";
+    CHECK(check(wf).has("launch_target_not_blank"));
+
+    wf.windows["main"] = WindowSpec{};
+    wf.steps[0].programPath.clear();
+    CHECK(check(wf).find("missing_field", "steps[0].programPath") != nullptr);
+}
+
 TEST(initial_workflow_data_must_be_a_bounded_json_object) {
     Workflow wf = minimalWorkflow();
     wf.initialDataJson = R"({"key":{"items":[null,true,1,"text"]}})";

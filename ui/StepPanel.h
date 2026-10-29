@@ -58,6 +58,9 @@ private:
     QLineEdit* id_ = nullptr;
     QLabel* type_ = nullptr;
     QComboBox* window_ = nullptr;
+    QWidget* programPathBox_ = nullptr;
+    QLineEdit* programPath_ = nullptr;
+    QLineEdit* programArguments_ = nullptr;
     QPlainTextEdit* locator_ = nullptr;
     QWidget* locatorBox_ = nullptr;
     QComboBox* clickMode_ = nullptr;

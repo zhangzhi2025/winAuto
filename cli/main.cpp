@@ -38,6 +38,7 @@
 #include "UiaSession.h"
 #include "Win32StopHotkey.h"
 #include "Win32WindowProvider.h"
+#include "Win32ProcessLauncher.h"
 #include "core/Clock.h"
 #include "core/Engine.h"
 #include "core/StopHotkey.h"
@@ -577,6 +578,7 @@ int cmdRun(const std::vector<std::string>& args) {
     wa::platform::Win32Clipboard clipboard;    // 剪贴板输入用；在使用它的线程里创建
     wa::platform::Win32Screenshot screenshot;
     wa::platform::ScriptWorker scripts;
+    wa::platform::Win32ProcessLauncher processes;
     wa::SteadyClock clock;
 
     wa::EngineDeps deps;
@@ -587,6 +589,7 @@ int cmdRun(const std::vector<std::string>& args) {
     deps.clipboard = &clipboard;
     deps.screenshot = &screenshot;
     deps.scripts = &scripts;
+    deps.processes = &processes;
     deps.prompt = [](const wa::Step& s) { return readSecret("请输入步骤 " + s.id + " 的内容（不回显）："); };
     // 每步结束时打印一行。块语句（if / repeat / while）在它的子步骤全部结束后才打印，
     // 所以先看到子步骤，最后是块自己的汇总；path 里的 "R#2" 表示 R 循环的第 2 轮。

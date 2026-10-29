@@ -120,33 +120,6 @@
     "window": {
       "type": "object",
       "additionalProperties": false,
-      "anyOf": [
-        {
-          "required": [
-            "processName"
-          ],
-          "properties": {
-            "processName": {
-              "minLength": 1
-            }
-          }
-        },
-        {
-          "required": [
-            "titleContains"
-          ],
-          "properties": {
-            "titleContains": {
-              "minLength": 1
-            }
-          }
-        },
-        {
-          "required": [
-            "processId"
-          ]
-        }
-      ],
       "properties": {
         "processName": {
           "type": "string"
@@ -480,7 +453,8 @@
             "if",
             "repeat",
             "while",
-            "script"
+            "script",
+            "launch_program"
           ]
         },
         "window": {
@@ -496,6 +470,15 @@
         "code": {
           "type": "string",
           "minLength": 1
+        },
+        "programPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "可执行程序的路径"
+        },
+        "arguments": {
+          "type": "string",
+          "description": "传给程序的命令行参数"
         },
         "locator": {
           "$ref": "#/definitions/locator"
@@ -892,6 +875,88 @@
                   "required": [
                     "durationMs"
                   ]
+                },
+                {
+                  "required": [
+                    "programPath"
+                  ]
+                },
+                {
+                  "required": [
+                    "arguments"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "launch_program"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "programPath",
+              "window"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "locator"
+                  ]
+                },
+                {
+                  "required": [
+                    "expect"
+                  ]
+                },
+                {
+                  "required": [
+                    "retry"
+                  ]
+                },
+                {
+                  "required": [
+                    "condition"
+                  ]
+                },
+                {
+                  "required": [
+                    "times"
+                  ]
+                },
+                {
+                  "required": [
+                    "maxIterations"
+                  ]
+                },
+                {
+                  "required": [
+                    "intervalMs"
+                  ]
+                },
+                {
+                  "required": [
+                    "then"
+                  ]
+                },
+                {
+                  "required": [
+                    "else"
+                  ]
+                },
+                {
+                  "required": [
+                    "body"
+                  ]
                 }
               ]
             }
@@ -921,6 +986,36 @@
                 {
                   "required": [
                     "code"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "launch_program"
+                }
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "programPath"
+                  ]
+                },
+                {
+                  "required": [
+                    "arguments"
                   ]
                 }
               ]

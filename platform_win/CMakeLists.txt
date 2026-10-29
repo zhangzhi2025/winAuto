@@ -18,6 +18,7 @@ add_library(winauto_platform STATIC
     Win32Screenshot.cpp
     Win32Clipboard.cpp
     ScriptWorker.cpp
+    Win32ProcessLauncher.cpp
     WindowGrab.cpp
 )
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

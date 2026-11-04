@@ -5,3 +5,17 @@ out/
 CMakeUserPresets.json
 *.user
 *.autosave
+bin/
+obj/
+*.o
+*.so
+*.a
+*.exe
+*.dll
+.idea/
+*.log
+.env*
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db

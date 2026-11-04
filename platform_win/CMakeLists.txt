@@ -19,12 +19,13 @@ add_library(winauto_platform STATIC
     Win32Clipboard.cpp
     ScriptWorker.cpp
     Win32ProcessLauncher.cpp
+    ModelCredentialStore.cpp
     WindowGrab.cpp
 )
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(winauto_platform SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 target_link_libraries(winauto_platform PUBLIC winauto_core)
-target_link_libraries(winauto_platform PRIVATE user32 gdi32 dwmapi advapi32 ole32 oleaut32 uuid windowscodecs)
+target_link_libraries(winauto_platform PRIVATE user32 gdi32 dwmapi advapi32 crypt32 ole32 oleaut32 uuid windowscodecs)
 set(WINAUTO_WORKER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/script_worker")
 file(MAKE_DIRECTORY "${WINAUTO_WORKER_OUTPUT_DIR}")
 configure_file(script_worker/python_worker.py "${WINAUTO_WORKER_OUTPUT_DIR}/python_worker.py" COPYONLY)

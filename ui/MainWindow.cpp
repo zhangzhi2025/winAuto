@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QInputDialog>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -36,11 +37,13 @@
 #include <QVBoxLayout>
 
 #include "ElementPickerDialog.h"
+#include "ModelSettingsDialog.h"
 #include "RunController.h"
 #include "StepPanel.h"
 #include "TemplateCaptureDialog.h"
 #include "Util.h"
 #include "WindowsDialog.h"
+#include "WorkflowGenerationDialog.h"
 #include "core/ExecutionState.h"
 #include "core/Json.h"
 #include "core/StepTree.h"
@@ -76,6 +79,7 @@ QString typeLabel(wa::StepType t) {
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    setWindowIcon(QIcon(QStringLiteral(":/branding/logo.png")));
     run_ = new RunController(this);
     buildUi();
     buildMenus();
@@ -165,6 +169,9 @@ void MainWindow::buildMenus() {
     auto* flow = menuBar()->addMenu(QStringLiteral("流程(&W)"));
     flow->addAction(QStringLiteral("目标窗口…"), this, &MainWindow::editWindows);
     flow->addAction(QStringLiteral("流程属性…"), this, &MainWindow::editSettings);
+    flow->addSeparator();
+    actGenerate_ = flow->addAction(QStringLiteral("AI 生成流程草稿…"), this, &MainWindow::generateWorkflow);
+    actModelSettings_ = flow->addAction(QStringLiteral("模型连接设置…"), this, &MainWindow::editModelSettings);
 
     auto* run = menuBar()->addMenu(QStringLiteral("运行(&R)"));
     actRunAll_ = run->addAction(QStringLiteral("运行全部"), this, &MainWindow::runAll, QKeySequence(Qt::Key_F5));
@@ -300,6 +307,8 @@ void MainWindow::updateActions() {
     actResume_->setEnabled(running && waiting_);
     actPause_->setEnabled(running && !waiting_);
     actStop_->setEnabled(running);
+    actGenerate_->setEnabled(!running);
+    actModelSettings_->setEnabled(!running);
 }
 
 void MainWindow::appendLog(const QString& line) {
@@ -528,6 +537,23 @@ void MainWindow::editSettings() {
     ex.maxStepExecutions = budget->value();
     editor_.setExecution(ex);
     refreshAll();
+}
+
+void MainWindow::generateWorkflow() {
+    if (run_->running()) return;
+    WorkflowGenerationDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted || !dialog.acceptedWorkflow()) return;
+    if (!maybeSave()) return;
+    editor_.loadDraft(*dialog.acceptedWorkflow());
+    filePath_.clear();
+    runMarks_.clear();
+    refreshAll(editor_.workflow().steps.empty() ? -1 : 0);
+    statusBar()->showMessage(QStringLiteral("已载入经过校验的流程草稿；请审核并保存后再运行。"), 6000);
+}
+
+void MainWindow::editModelSettings() {
+    ModelSettingsDialog dialog(this);
+    dialog.exec();
 }
 
 void MainWindow::undo() {

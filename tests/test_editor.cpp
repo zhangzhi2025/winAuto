@@ -20,6 +20,15 @@ TEST(new_editor_is_clean_and_unmodified) {
     CHECK(e.workflow().steps.empty());
 }
 
+TEST(load_draft_marks_workflow_as_unsaved) {
+    WorkflowEditor editor;
+    Workflow draft = minimalWorkflow();
+    editor.loadDraft(draft);
+    CHECK(editor.dirty());
+    CHECK(!editor.canUndo());
+    CHECK_EQ(editor.workflow().id, draft.id);
+}
+
 TEST(add_step_uses_unique_ids_and_first_window) {
     WorkflowEditor e = loaded();
     const size_t i = e.addStep(99, StepType::Click);  // 越界 → 追加

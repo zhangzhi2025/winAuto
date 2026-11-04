@@ -1,7 +1,17 @@
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 add_executable(winauto-ui WIN32
     main.cpp
+    resources.qrc
     MainWindow.cpp
+    WorkflowCapabilities.cpp
+    WorkflowGeneration.cpp
+    WorkflowProposalParser.cpp
+    ModelConnectionSettings.cpp
+    ModelSettingsDialog.cpp
+    ClaudeWorkflowProvider.cpp
+    OpenAIWorkflowProvider.cpp
+    WorkflowGenerationDialog.cpp
     StepPanel.cpp
     WindowPickerDialog.cpp
     WindowsDialog.cpp
@@ -9,7 +19,7 @@ add_executable(winauto-ui WIN32
     TemplateCaptureDialog.cpp
     RunController.cpp
 )
-target_link_libraries(winauto-ui PRIVATE Qt5::Widgets winauto_core)
+target_link_libraries(winauto-ui PRIVATE Qt5::Widgets Qt5::Network winauto_core)
 if(WIN32)
     # 窗口枚举、UIA、输入、停止热键都在 platform_win；没有它界面只能编辑，不能运行
     target_link_libraries(winauto-ui PRIVATE winauto_platform)

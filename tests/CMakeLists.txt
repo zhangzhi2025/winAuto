@@ -27,6 +27,25 @@ foreach(src ${WINAUTO_TEST_SOURCES})
     add_test(NAME ${name} COMMAND ${name})
 endforeach()
 
+if(Qt5_FOUND)
+    add_executable(test_workflow_generation
+        test_workflow_generation.cpp
+        testing_main.cpp
+        ${CMAKE_SOURCE_DIR}/ui/WorkflowGeneration.cpp
+        ${CMAKE_SOURCE_DIR}/ui/WorkflowCapabilities.cpp
+        ${CMAKE_SOURCE_DIR}/ui/WorkflowProposalParser.cpp
+        ${CMAKE_SOURCE_DIR}/ui/ClaudeWorkflowProvider.cpp
+        ${CMAKE_SOURCE_DIR}/ui/OpenAIWorkflowProvider.cpp
+    )
+    set_target_properties(test_workflow_generation PROPERTIES AUTOMOC ON)
+    target_include_directories(test_workflow_generation PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/ui
+    )
+    target_link_libraries(test_workflow_generation PRIVATE Qt5::Core Qt5::Network winauto_core)
+    add_test(NAME test_workflow_generation COMMAND test_workflow_generation)
+endif()
+
 # core 纯净性检查：core/ 下不得引用 Win32 / COM / Qt 头文件
 add_test(NAME core_purity
     COMMAND ${CMAKE_COMMAND} -DCORE_DIR=${CMAKE_SOURCE_DIR}/core -P ${CMAKE_CURRENT_SOURCE_DIR}/check_core_purity.cmake)

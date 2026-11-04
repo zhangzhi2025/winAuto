@@ -73,6 +73,11 @@ void WorkflowEditor::load(Workflow wf) {
     validationValid_ = false;
 }
 
+void WorkflowEditor::loadDraft(Workflow wf) {
+    load(std::move(wf));
+    dirty_ = true;
+}
+
 void WorkflowEditor::snapshot() {
     undo_.push_back(wf_);
     if (undo_.size() > kMaxUndo) undo_.erase(undo_.begin());

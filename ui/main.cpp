@@ -1,6 +1,7 @@
 // WinAuto 图形界面。逻辑都在 core（有单元测试），这里只做界面。
 #include <QApplication>
 #include <QCoreApplication>
+#include <QIcon>
 #include <QStringList>
 
 #include "MainWindow.h"
@@ -11,6 +12,7 @@ int main(int argc, char** argv) {
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("WinAuto"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/branding/logo.png")));
 
     MainWindow w;
     const QStringList args = app.arguments();

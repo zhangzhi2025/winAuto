@@ -34,12 +34,12 @@ endif()
 add_subdirectory(cli)
 
 # ui: Qt 5.15 Widgets，找不到 Qt 时自动跳过
-find_package(Qt5 5.15 COMPONENTS Widgets QUIET)
+find_package(Qt5 5.15 COMPONENTS Widgets Network QUIET)
 if(Qt5_FOUND)
     message(STATUS "Qt5 ${Qt5_VERSION} found, building ui")
     add_subdirectory(ui)
 else()
-    message(STATUS "Qt5 not found, skipping ui (set CMAKE_PREFIX_PATH to your Qt 5.15 kit)")
+    message(STATUS "Qt5 Widgets/Network not found, skipping ui (set CMAKE_PREFIX_PATH to your Qt 5.15 kit)")
 endif()
 
 if(WINAUTO_BUILD_TESTS)

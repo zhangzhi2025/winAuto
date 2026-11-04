@@ -17,6 +17,7 @@ public:
 
     // ---- 载入与保存状态
     void load(Workflow wf);  // 清空撤销历史，标记为未修改
+    void loadDraft(Workflow wf);  // 清空撤销历史，标记为需要保存
     const Workflow& workflow() const { return wf_; }
     bool dirty() const { return dirty_; }
     void markSaved() { dirty_ = false; }

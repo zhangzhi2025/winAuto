@@ -46,6 +46,22 @@ if(Qt5_FOUND)
     add_test(NAME test_workflow_generation COMMAND test_workflow_generation)
 endif()
 
+if(TARGET Qt5::WebSockets)
+    add_executable(test_agent_session
+        test_agent_session.cpp
+        ${CMAKE_SOURCE_DIR}/ui/AgentConnectionSettings.cpp
+        ${CMAKE_SOURCE_DIR}/ui/AgentSession.cpp
+    )
+    set_target_properties(test_agent_session PROPERTIES AUTOMOC ON)
+    target_include_directories(test_agent_session PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/ui
+    )
+    target_compile_definitions(test_agent_session PRIVATE WINAUTO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(test_agent_session PRIVATE Qt5::Core Qt5::Network Qt5::WebSockets)
+    add_test(NAME test_agent_session COMMAND test_agent_session)
+endif()
+
 # core 纯净性检查：core/ 下不得引用 Win32 / COM / Qt 头文件
 add_test(NAME core_purity
     COMMAND ${CMAKE_COMMAND} -DCORE_DIR=${CMAKE_SOURCE_DIR}/core -P ${CMAKE_CURRENT_SOURCE_DIR}/check_core_purity.cmake)
@@ -77,4 +93,7 @@ if(Python3_Interpreter_FOUND)
                 ${CMAKE_SOURCE_DIR}/examples/mouse-demo.json
                 ${CMAKE_SOURCE_DIR}/examples/launch-program-demo.json)
     set_tests_properties(schema_examples PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(NAME test_agent_permissions
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_agent_permissions.py
+                ${CMAKE_SOURCE_DIR}/docs/server/server.py)
 endif()

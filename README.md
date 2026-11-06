@@ -17,20 +17,20 @@
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
 
-前置：CMake ≥ 3.16，Qt **5.15.2**（msvc2019_64 套件，仅 ui 需要）。
+前置：CMake ≥ 3.16，Qt **5.15** MSVC 2019 套件（仅 ui 需要，须含 Widgets、Network 和 WebSockets）。
 
 ```bat
 cd E:\develop\rpaclient
 
-:: VS 2022；VS 2019 把生成器换成 "Visual Studio 16 2019"
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
+:: 按本机 Qt 套件架构选择 -A Win32 或 -A x64；VS 2022 可改用对应生成器
+cmake -S . -B build -G "Visual Studio 16 2019" -A Win32 -DCMAKE_PREFIX_PATH=D:/Qt/qt5.15/msvc2019 -DWINAUTO_WERROR=ON
 cmake --build build --config Debug
 
 cd build
 ctest -C Debug --output-on-failure
 ```
 
-- 找不到 Qt 时会自动跳过 `ui`，core、cli、测试照常构建。
+- 找不到 Qt Widgets/Network 或 WebSockets 时会明确跳过 `ui`，core、cli 和不依赖 Qt 的测试照常构建。
 - 也可以直接用 Visual Studio 的"打开本地文件夹"打开本目录（CMake 项目）。
 - 非 Windows 平台只能构建 core、cli 和测试（CI 友好）。
 
@@ -163,6 +163,22 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
   停在某一步之前时该行高亮；跳过的步骤在日志里标记。只运行选中步骤时，窗口预检只检查这一步用到的窗口。
 - 运行时询问的敏感文本（`textFrom: prompt`）用密码框询问，不落盘。
 - 保存使用原子写入（QSaveFile），不会写一半损坏原文件。
+
+## Agent WebSocket 会话
+
+- 在“流程 → Agent WebSocket 会话”中单独配置服务地址、项目目录和可选 session ID；空 ID 新建会话，已有 ID 恢复会话。连接前会要求确认 Agent 可访问的工作目录。
+- 桌面端通过 Qt WebSockets 连接独立运行的桥接服务，不启动或管理服务，也不会修改当前流程、未保存编辑或大模型连接设置。服务地址仅接受 `ws://` / `wss://`。
+- 可参考 `docs/server/server.py` 的 JSON WebSocket 桥接。服务端工具权限必须由服务自己的确认机制管理；`COPILOT_AUTO_APPROVE` 默认关闭，设置为 `true` 会允许自动批准，不应在需要逐项确认时启用。
+- 运行 `test_agent_session` 和 `test_agent_permissions` 可验证本机协议状态机、设置隔离及服务端权限默认值；手动新建/恢复、流式输出、中止和断连步骤见 `specs/003-agent-websocket-integration/quickstart.md`。
+
+### 本地 Agent UI 演示（无需 Copilot）
+
+```bat
+python -m pip install websockets
+python docs\server\demo_server.py
+```
+
+在 WinAuto 的“流程 → Agent WebSocket 会话”中，将地址设为 `ws://127.0.0.1:8765`，选择一个存在的项目目录，连接后发送一条消息，即可查看模拟流式回复和工具活动。该演示只回显文本，不连接模型、不执行工具；按 `Ctrl+C` 停止服务。
 
 ## 图像定位约定（阶段 5）
 - 用法：`"strategy": "image"`，`template`（相对**流程文件所在目录**，只接受 .png / .bmp）、`minConfidence`（默认 0.9）、

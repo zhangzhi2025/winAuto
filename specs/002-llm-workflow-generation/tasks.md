@@ -79,7 +79,7 @@ description: "Implementation tasks for LLM-assisted workflow generation"
 **Purpose**: Keep the implementation guide aligned with the delivered application and verify the configured desktop build.
 
 - [X] T015 [P] Update `specs/002-llm-workflow-generation/quickstart.md` with the final supported build configuration and the implemented generation, review, credential-protection, cancellation, and unsupported-capability acceptance steps.
-- [X] T016 Build the Qt-enabled UI and run the focused CTest commands documented in `specs/002-llm-workflow-generation/quickstart.md`; resolve regressions without weakening `core_purity` or existing workflow validation and execution gates.
+- [ ] T016 Build the Qt-enabled UI and run the focused CTest commands documented in `specs/002-llm-workflow-generation/quickstart.md`; resolve regressions without weakening `core_purity` or existing workflow validation and execution gates.
 
 ---
 

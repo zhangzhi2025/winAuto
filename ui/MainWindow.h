@@ -41,6 +41,7 @@ private slots:
     void editSettings();
     void generateWorkflow();
     void editModelSettings();
+    void openAgentSession();
     void undo();
     void redo();
     void onStepSelected();
@@ -97,6 +98,7 @@ private:
     QAction *actUndo_ = nullptr, *actRedo_ = nullptr;
     QAction* actGenerate_ = nullptr;
     QAction* actModelSettings_ = nullptr;
+    QAction* actAgentSession_ = nullptr;
     QAction *actRemove_ = nullptr, *actDup_ = nullptr, *actUp_ = nullptr, *actDown_ = nullptr;
     QAction *actIndent_ = nullptr, *actIndentElse_ = nullptr, *actOutdent_ = nullptr, *actShots_ = nullptr;
     QMenu* addIntoMenu_ = nullptr;

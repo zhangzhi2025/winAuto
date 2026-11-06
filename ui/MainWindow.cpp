@@ -37,6 +37,7 @@
 #include <QVBoxLayout>
 
 #include "ElementPickerDialog.h"
+#include "AgentSessionDialog.h"
 #include "ModelSettingsDialog.h"
 #include "RunController.h"
 #include "StepPanel.h"
@@ -172,6 +173,8 @@ void MainWindow::buildMenus() {
     flow->addSeparator();
     actGenerate_ = flow->addAction(QStringLiteral("AI 生成流程草稿…"), this, &MainWindow::generateWorkflow);
     actModelSettings_ = flow->addAction(QStringLiteral("模型连接设置…"), this, &MainWindow::editModelSettings);
+    flow->addSeparator();
+    actAgentSession_ = flow->addAction(QStringLiteral("Agent WebSocket 会话…"), this, &MainWindow::openAgentSession);
 
     auto* run = menuBar()->addMenu(QStringLiteral("运行(&R)"));
     actRunAll_ = run->addAction(QStringLiteral("运行全部"), this, &MainWindow::runAll, QKeySequence(Qt::Key_F5));
@@ -309,6 +312,7 @@ void MainWindow::updateActions() {
     actStop_->setEnabled(running);
     actGenerate_->setEnabled(!running);
     actModelSettings_->setEnabled(!running);
+    actAgentSession_->setEnabled(!running);
 }
 
 void MainWindow::appendLog(const QString& line) {
@@ -553,6 +557,12 @@ void MainWindow::generateWorkflow() {
 
 void MainWindow::editModelSettings() {
     ModelSettingsDialog dialog(this);
+    dialog.exec();
+}
+
+void MainWindow::openAgentSession() {
+    if (run_->running()) return;
+    AgentSessionDialog dialog(this);
     dialog.exec();
 }
 

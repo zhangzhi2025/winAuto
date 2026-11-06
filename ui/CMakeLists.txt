@@ -9,6 +9,9 @@ add_executable(winauto-ui WIN32
     WorkflowProposalParser.cpp
     ModelConnectionSettings.cpp
     ModelSettingsDialog.cpp
+    AgentConnectionSettings.cpp
+    AgentSession.cpp
+    AgentSessionDialog.cpp
     ClaudeWorkflowProvider.cpp
     OpenAIWorkflowProvider.cpp
     WorkflowGenerationDialog.cpp
@@ -19,7 +22,7 @@ add_executable(winauto-ui WIN32
     TemplateCaptureDialog.cpp
     RunController.cpp
 )
-target_link_libraries(winauto-ui PRIVATE Qt5::Widgets Qt5::Network winauto_core)
+target_link_libraries(winauto-ui PRIVATE Qt5::Widgets Qt5::Network Qt5::WebSockets winauto_core)
 if(WIN32)
     # 窗口枚举、UIA、输入、停止热键都在 platform_win；没有它界面只能编辑，不能运行
     target_link_libraries(winauto-ui PRIVATE winauto_platform)

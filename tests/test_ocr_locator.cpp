@@ -47,17 +47,24 @@ TEST(ocr_direction_classifies_all_eight_sectors_and_center) {
     CHECK(!matchesOcrDirection(OcrDirection::Right, client, Rect{50, 50, 0, 0}));
     CHECK(matchesOcrDirection(OcrDirection::RightBack, client, Rect{62, 55, 0, 0}));
     CHECK(!matchesOcrDirection(OcrDirection::Right, client, Rect{62, 55, 0, 0}));
+    const Rect offCenterClient{1000, 2000, 100, 100};
+    CHECK(matchesOcrDirection(OcrDirection::Right, offCenterClient, Rect{1090, 2050, 0, 0}));
+    const Rect boundaryClient{0, 0, 5000, 5000};
+    CHECK(matchesOcrDirection(OcrDirection::RightBack, boundaryClient, Rect{4914, 3500, 0, 0}));
+    CHECK(!matchesOcrDirection(OcrDirection::Right, boundaryClient, Rect{4914, 3500, 0, 0}));
+    CHECK(matchesOcrDirection(OcrDirection::Right, boundaryClient, Rect{4915, 3500, 0, 0}));
+    CHECK(!matchesOcrDirection(OcrDirection::RightBack, boundaryClient, Rect{4915, 3500, 0, 0}));
 }
 
 TEST(ocr_filter_preserves_multiple_candidates_in_deterministic_order) {
     OcrRecognition recognition;
     recognition.clientBounds = Rect{100, 200, 400, 200};
-    recognition.candidates = {candidate("target", 400, 250), candidate("target", 200, 250)};
+    recognition.candidates = {candidate("target", 400, 300), candidate("target", 350, 300)};
     OcrLocator locator;
     locator.text = "target";
     locator.direction = OcrDirection::Right;
     const auto matches = filterOcrCandidates(locator, recognition);
     CHECK_EQ(matches.size(), size_t(2));
-    CHECK_EQ(matches[0].screenBounds.x, 200);
+    CHECK_EQ(matches[0].screenBounds.x, 350);
     CHECK_EQ(matches[1].screenBounds.x, 400);
 }

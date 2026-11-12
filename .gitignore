@@ -1,4 +1,7 @@
 build/
+build-copilot-x86/
+build-copilot/
+build-ocr-on/
 out/
 .vs/
 .vscode/

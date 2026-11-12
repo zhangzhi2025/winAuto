@@ -12,6 +12,14 @@ The OCR adapter requires the RapidOcrOnnx source plus matching architecture/CRT 
 
 Confirm the character dictionary is compatible with the selected recognition model. Configure native library and DLL deployment using the RapidOcrOnnx build guidance. OCR configuration must fail with a clear message if required native dependencies are missing; it must not affect core-only builds.
 
+OCR is opt-in until matching MSVC OpenCV and ONNX Runtime packages are installed:
+
+```bat
+cmake -S . -B build -G "Visual Studio 16 2019" -A x64 -DWINAUTO_ENABLE_OCR=ON
+```
+
+The current checkout includes the RapidOcrOnnx source and model assets but does not include the Windows-x64 dependency packages. A configure attempt with OCR enabled therefore stops with an explicit missing-package diagnostic. The normal configure without `WINAUTO_ENABLE_OCR` continues to build non-OCR workflows.
+
 ## Build and tests
 
 Use the repository's Windows CMake/CTest configuration from `README.md` and the selected Visual Studio/Qt kit. Build the Windows platform and UI targets with warnings treated as errors, then run:

@@ -281,6 +281,12 @@ TEST(ocr_locator_json_roundtrips_all_filters) {
     CHECK_EQ(rereadOcr->searchRegion->w, 300);
 }
 
+TEST(ocr_locator_rejects_unsupported_direction) {
+    const auto result = readLocatorJson(R"({"strategy":"ocr","text":"OK","direction":"north"})");
+    CHECK(!result.ok());
+    CHECK_CONTAINS(result.detail, "direction");
+}
+
 TEST(missing_fields_are_read_but_left_to_the_validator) {
     auto r = readWorkflow("{}");
     CHECK(r.ok());

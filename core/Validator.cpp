@@ -1,6 +1,7 @@
 #include "core/Validator.h"
 
 #include "core/ControlType.h"
+#include "core/InputPlan.h"
 #include "core/StepTree.h"
 
 #include <algorithm>
@@ -163,6 +164,12 @@ public:
             if (ocr->text.empty() && ocr->keyword.empty()) {
                 error(path, "ocr_no_condition", "ocr locator needs text or keyword");
             }
+            if (!ocr->text.empty() && !utf8ToUtf16(ocr->text).ok()) {
+                error(sub(path, "text"), "invalid_utf8", "OCR text must be valid UTF-8");
+            }
+            if (!ocr->keyword.empty() && !utf8ToUtf16(ocr->keyword).ok()) {
+                error(sub(path, "keyword"), "invalid_utf8", "OCR keyword must be valid UTF-8");
+            }
             if (!std::isfinite(ocr->minConfidence) || ocr->minConfidence < 0.0 ||
                 ocr->minConfidence > 1.0) {
                 error(sub(path, "minConfidence"), "out_of_range",
@@ -171,9 +178,13 @@ public:
                 warn(sub(path, "minConfidence"), "low_confidence",
                      "a minConfidence below 0.7 can match incorrect text");
             }
-            if (ocr->searchRegion && (ocr->searchRegion->w <= 0 || ocr->searchRegion->h <= 0)) {
+            if (ocr->searchRegion &&
+                (ocr->searchRegion->x < 0 || ocr->searchRegion->y < 0 ||
+                 ocr->searchRegion->w <= 0 || ocr->searchRegion->h <= 0 ||
+                 ocr->searchRegion->x > kMaxCoord || ocr->searchRegion->y > kMaxCoord ||
+                 ocr->searchRegion->w > kMaxCoord || ocr->searchRegion->h > kMaxCoord)) {
                 error(sub(path, "searchRegion"), "out_of_range",
-                      "searchRegion width and height must be positive");
+                      "searchRegion coordinates must be non-negative and dimensions must be 1..32767");
             }
             if (ocr->ambiguity == Ambiguity::First) {
                 warn(path, "ambiguity_first",

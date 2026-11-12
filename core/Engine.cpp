@@ -211,6 +211,11 @@ struct WorkflowEngine::Run {
         Result<OcrRecognition> recognized = deps.ocr->recognize(
             OcrRequest{handle, ocr->searchRegion}, locateToken);
         if (!recognized.ok()) return Result<ElementRef>::failure(recognized.code, recognized.detail);
+        if (!recognized.value.hasRegionData) {
+            return Result<ElementRef>::failure(
+                ErrCode::Unsupported,
+                "RapidOcrOnnx C API returns recognized text without text-region coordinates; OCR locator is unavailable");
+        }
         std::vector<OcrTextCandidate> matches = filterOcrCandidates(*ocr, recognized.value);
         if (matches.empty()) return Result<ElementRef>::failure(ErrCode::ElementNotFound, "OCR text not found");
         if (matches.size() > 1 && ocr->ambiguity == Ambiguity::Error) {
@@ -517,7 +522,11 @@ struct WorkflowEngine::Run {
                                   {"recognition_confidence", candidate.recognitionConfidence},
                                   {"detection_confidence", candidate.detectionConfidence}});
             }
-            return success(json{{"candidates", std::move(blocks)}});
+            json response = {{"text", recognized.value.recognizedText}, {"candidates", std::move(blocks)}};
+            if (response.dump().size() > kMaxWorkflowDataBytes) {
+                return Result<ScriptHostResponse>::failure(ErrCode::LimitExceeded, "OCR host result too large");
+            }
+            return success(response);
         }
         if (request.operation == "input.text" || request.operation == "input.hotkey") {
             if (!deps.windows->isForeground(handle)) {
@@ -760,7 +769,7 @@ struct WorkflowEngine::Run {
     void maybeScreenshot(const Step& s, StepRecord& rec) {
         if (!wf.execution.screenshotOnFailure || !options || options->screenshotDir.empty() || !deps.screenshot) return;
         if (sensitiveSeen || rec.code == ErrCode::Ok || rec.code == ErrCode::Cancelled) return;
-        if (!requiresWindow(s.type) || s.window.empty()) return;
+        if (s.window.empty()) return;
         if (static_cast<int>(report.screenshots.size()) >= kMaxFailureShots) return;
         const auto h = handles.find(s.window);
         if (h == handles.end() || !deps.windows->isWindowValid(h->second)) return;
@@ -835,7 +844,7 @@ struct WorkflowEngine::Run {
     bool execBlock(const Step& s) {
         const size_t slot = report.steps.size();
         report.steps.push_back(beginRecord(s));
-        const std::uint64_t handle = requiresWindow(s.type) ? handles[s.window] : 0;
+        const std::uint64_t handle = (requiresWindow(s.type) || !s.window.empty()) ? handles[s.window] : 0;
 
         auto setResult = [&](ErrCode code, const std::string& detail) {
             StepRecord& r = report.steps[slot];
@@ -985,7 +994,8 @@ struct WorkflowEngine::Run {
         const int maxAttempts = s.type == StepType::LaunchProgram ? 1 : 1 + std::max(0, retry.times);
 
         std::uint64_t handle = 0;
-        if (requiresWindow(s.type)) handle = handles[s.window];
+        const bool hasWindow = requiresWindow(s.type) || !s.window.empty();
+        if (hasWindow) handle = handles[s.window];
 
         Status st = okStatus();
         for (int attempt = 1; attempt <= maxAttempts; ++attempt) {
@@ -994,7 +1004,7 @@ struct WorkflowEngine::Run {
                 st = Status::failure(ErrCode::Cancelled);
                 break;
             }
-            if (requiresWindow(s.type) && !deps.windows->isWindowValid(handle)) {
+            if (hasWindow && !deps.windows->isWindowValid(handle)) {
                 st = Status::failure(ErrCode::WindowNotFound,
                                      "window \"" + s.window + "\" is no longer valid");
                 break;

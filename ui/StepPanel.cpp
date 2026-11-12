@@ -256,6 +256,13 @@ void StepPanel::buildUi() {
         confidence->setRange(0.0, 1.0);
         confidence->setSingleStep(0.05);
         confidence->setDecimals(2);
+        auto* useRegion = new QCheckBox(QStringLiteral("限制识别区域"), &dialog);
+        auto* regionX = new QSpinBox(&dialog);
+        auto* regionY = new QSpinBox(&dialog);
+        auto* regionWidth = new QSpinBox(&dialog);
+        auto* regionHeight = new QSpinBox(&dialog);
+        for (QSpinBox* box : {regionX, regionY}) box->setRange(0, 32767);
+        for (QSpinBox* box : {regionWidth, regionHeight}) box->setRange(1, 32767);
         auto* direction = new QComboBox(&dialog);
         direction->addItem(QStringLiteral("不筛选"), QString());
         const std::pair<const char*, const char*> directions[] = {
@@ -269,6 +276,11 @@ void StepPanel::buildUi() {
         form->addRow(QStringLiteral("匹配方式"), match);
         form->addRow(QStringLiteral("关键词前缀（可选）"), keyword);
         form->addRow(QStringLiteral("最低识别置信度"), confidence);
+        form->addRow(QString(), useRegion);
+        form->addRow(QStringLiteral("识别区域 X"), regionX);
+        form->addRow(QStringLiteral("识别区域 Y"), regionY);
+        form->addRow(QStringLiteral("识别区域宽度"), regionWidth);
+        form->addRow(QStringLiteral("识别区域高度"), regionHeight);
         form->addRow(QStringLiteral("方向（相对窗口中心）"), direction);
         form->addRow(QStringLiteral("多个候选"), ambiguity);
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
@@ -285,6 +297,13 @@ void StepPanel::buildUi() {
                                                            : QStringLiteral("contains")));
                 keyword->setText(qs(locator->keyword));
                 confidence->setValue(locator->minConfidence);
+                useRegion->setChecked(locator->searchRegion.has_value());
+                if (locator->searchRegion) {
+                    regionX->setValue(locator->searchRegion->x);
+                    regionY->setValue(locator->searchRegion->y);
+                    regionWidth->setValue(locator->searchRegion->w);
+                    regionHeight->setValue(locator->searchRegion->h);
+                }
                 direction->setCurrentIndex(direction->findData(
                     locator->direction ? QString::fromLatin1(wa::toString(*locator->direction)) : QString()));
                 ambiguity->setCurrentIndex(ambiguity->findData(
@@ -300,6 +319,10 @@ void StepPanel::buildUi() {
                             : wa::Match::Exact;
         locator.keyword = stdStr(keyword->text());
         locator.minConfidence = confidence->value();
+        if (useRegion->isChecked()) {
+            locator.searchRegion = wa::Rect{regionX->value(), regionY->value(),
+                                            regionWidth->value(), regionHeight->value()};
+        }
         const QString selectedDirection = direction->currentData().toString();
         if (!selectedDirection.isEmpty()) {
             wa::OcrDirection parsedDirection;

@@ -99,12 +99,69 @@ TEST(ocr_locator_filters_candidates_and_returns_text_region) {
     locator.keyword = "Submit";
     locator.direction = OcrDirection::LeftFront;
     locator.ambiguity = Ambiguity::First;
-    Step target = step("OCR", StepType::AssertElement);
+    Step target = step("OCR", StepType::Click);
     target.locator = Locator{locator};
+    target.clickMode = ClickMode::Point;
     RunReport report = env.run(flow({target}));
     CHECK(report.state == ExecutionState::Succeeded);
     CHECK_EQ(env.ocr.requests.size(), size_t(1));
     CHECK_EQ(report.steps.size(), size_t(1));
+    CHECK_EQ(env.input.actions.size(), size_t(1));
+    CHECK_EQ(env.input.actions[0], std::string("click:125,116"));
+}
+
+TEST(ocr_fallback_advances_only_on_no_match_and_stops_on_provider_errors) {
+    {
+        Env env;
+        env.ocr.handler = [](const OcrRequest&, const CancelToken&) {
+            return Result<OcrRecognition>::failure(ErrCode::ElementNotFound, "no recognized text");
+        };
+        env.locator.handler = [](const LeafLocator&, int) { return found("fallback"); };
+        OcrLocator ocr;
+        ocr.text = "Continue";
+        FallbackLocator fallback;
+        fallback.items = {LeafLocator{ocr}, LeafLocator{uia("fallback")}};
+        Step target = step("OCR-FALLBACK", StepType::Click);
+        target.locator = Locator{fallback};
+        const RunReport report = env.run(flow({target}));
+        CHECK(report.state == ExecutionState::Succeeded);
+        CHECK_EQ(env.locator.calls.size(), size_t(1));
+    }
+    for (const ErrCode error : {ErrCode::Unsupported, ErrCode::Timeout}) {
+        Env env;
+        env.ocr.handler = [error](const OcrRequest&, const CancelToken&) {
+            return Result<OcrRecognition>::failure(error, "OCR provider failed");
+        };
+        OcrLocator ocr;
+        ocr.text = "Continue";
+        FallbackLocator fallback;
+        fallback.items = {LeafLocator{ocr}, LeafLocator{uia("fallback")}};
+        Step target = step("OCR-FALLBACK", StepType::Click);
+        target.locator = Locator{fallback};
+        const RunReport report = env.run(flow({target}));
+        CHECK(report.code == error);
+        CHECK(env.locator.calls.empty());
+    }
+    {
+        Env env;
+        OcrRecognition recognition;
+        recognition.clientBounds = Rect{0, 0, 300, 200};
+        recognition.candidates = {
+            OcrTextCandidate{"Continue", Rect{10, 10, 50, 20}, Rect{10, 10, 50, 20}, 0.9, 0.9, 0},
+            OcrTextCandidate{"Continue", Rect{80, 10, 50, 20}, Rect{80, 10, 50, 20}, 0.9, 0.9, 1}};
+        env.ocr.handler = [recognition](const OcrRequest&, const CancelToken&) {
+            return Result<OcrRecognition>::success(recognition);
+        };
+        OcrLocator ocr;
+        ocr.text = "Continue";
+        FallbackLocator fallback;
+        fallback.items = {LeafLocator{ocr}, LeafLocator{uia("fallback")}};
+        Step target = step("OCR-AMBIGUOUS", StepType::Click);
+        target.locator = Locator{fallback};
+        const RunReport report = env.run(flow({target}));
+        CHECK(report.code == ErrCode::ElementAmbiguous);
+        CHECK(env.locator.calls.empty());
+    }
 }
 
 TEST(launch_program_binds_the_unique_window_from_its_process) {

@@ -1,7 +1,7 @@
 #include "core/OcrMatch.h"
 
-#include <algorithm>
 #include <cmath>
+#include <algorithm>
 
 namespace wa {
 namespace {

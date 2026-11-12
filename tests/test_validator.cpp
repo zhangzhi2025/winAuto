@@ -295,6 +295,18 @@ TEST(ocr_locator_requires_text_or_keyword_and_valid_ranges) {
     CHECK(report.has("out_of_range"));
 }
 
+TEST(ocr_locator_rejects_invalid_utf8_without_echoing_query) {
+    OcrLocator locator;
+    locator.text = std::string("\xC3", 1);
+    Step step = testutil::step("OCR", StepType::AssertElement);
+    step.locator = Locator{locator};
+    const auto report = check(withStep(step));
+    CHECK(report.has("invalid_utf8"));
+    const Issue* issue = report.find("invalid_utf8", "steps[0].locator.text");
+    CHECK(issue != nullptr);
+    if (issue) CHECK_NOT_CONTAINS(issue->message, locator.text);
+}
+
 TEST(wait_requires_duration_within_range) {
     Step w = step("W", StepType::Wait, "");
     CHECK(check(withStep(w)).has("missing_field"));

@@ -103,6 +103,8 @@ std::string describe(const Locator& loc) {
         out += "(" + std::to_string(s->x) + ", " + std::to_string(s->y) + ")";
     } else if (const auto* i = std::get_if<ImageLocator>(&loc.value)) {
         out += "(" + i->templatePath + ")";
+    } else if (std::holds_alternative<OcrLocator>(loc.value)) {
+        out += "(text)";
     } else if (const auto* f = std::get_if<FallbackLocator>(&loc.value)) {
         out += "[";
         for (std::size_t k = 0; k < f->locators.size(); ++k) {

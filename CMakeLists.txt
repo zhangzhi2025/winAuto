@@ -8,6 +8,7 @@ set(CMAKE_CXX_COMPILER_WORKS 1)
 
 option(WINAUTO_BUILD_TESTS "Build unit tests" ON)
 option(WINAUTO_WERROR "Treat warnings as errors" OFF)
+option(WINAUTO_ENABLE_OCR "Build the Windows RapidOcrOnnx OCR adapter" OFF)
 
 if(MSVC)
     add_compile_options(/utf-8 /W4 /permissive- /Zc:__cplusplus)

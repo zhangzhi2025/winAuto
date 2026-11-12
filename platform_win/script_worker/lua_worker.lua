@@ -214,7 +214,11 @@ local automation = {
         return call("element.set_value", { window = window, locator = locator, text = text })
     end,
     input_text = function(window, text) return call("input.text", { window = window, text = text }) end,
-    hotkey = function(window, keys) return call("input.hotkey", { window = window, keys = keys }) end
+    hotkey = function(window, keys) return call("input.hotkey", { window = window, keys = keys }) end,
+    ocr = function(window, keyword, search_region)
+        return call("ocr.recognize", { window = window, keyword = keyword,
+                                      searchRegion = search_region }).candidates
+    end
 }
 
 _G.json = json

@@ -2,6 +2,7 @@ set(WINAUTO_TEST_SOURCES
     test_errcode.cpp
     test_json.cpp
     test_validator.cpp
+    test_ocr_locator.cpp
     test_state_cancel.cpp
     test_logger.cpp
     test_engine.cpp

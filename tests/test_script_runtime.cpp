@@ -31,6 +31,7 @@ struct Env {
     FakeClock clock;
     FakeWindowProvider windows;
     FakeElementLocator locator;
+    FakeOcrProvider ocr;
     FakeInputController input;
     FakeScriptRunner scripts;
     CancelToken token;
@@ -41,6 +42,7 @@ struct Env {
         EngineDeps deps;
         deps.windows = &windows;
         deps.locator = &locator;
+        deps.ocr = &ocr;
         deps.input = &input;
         deps.clock = &clock;
         deps.scripts = &scripts;
@@ -124,6 +126,39 @@ TEST(script_broker_dispatches_input_through_checked_host_interfaces) {
     CHECK_EQ(env.input.actions[0], "type:unicode:private-value");
     CHECK_NOT_CONTAINS(report.detail, "private-value");
     for (const auto& entry : report.logs) CHECK_NOT_CONTAINS(entry.message, "private-value");
+}
+
+TEST(script_broker_exposes_ocr_regions_with_keyword_prefix_filtering) {
+    Env env;
+    Workflow workflow = minimalWorkflow();
+    workflow.steps = {script("OCR")};
+    OcrRecognition recognition;
+    recognition.clientBounds = Rect{30, 40, 320, 200};
+    recognition.candidates = {
+        OcrTextCandidate{"Save document", Rect{5, 6, 70, 18}, Rect{35, 46, 70, 18}, 0.96, 0.9, 0},
+        OcrTextCandidate{"Cancel", Rect{90, 6, 42, 18}, Rect{120, 46, 42, 18}, 0.98, 0.9, 1}};
+    env.ocr.handler = [recognition](const OcrRequest&, const CancelToken&) {
+        return Result<OcrRecognition>::success(recognition);
+    };
+    env.scripts.handler = [](const ScriptRequest&, const CancelToken&, const ScriptHostHandler& host) {
+        const auto response = host(ScriptHostRequest{
+            1, "ocr.recognize",
+            json{{"window", "main"}, {"keyword", "Save"},
+                 {"searchRegion", {{"x", 1}, {"y", 2}, {"width", 100}, {"height", 50}}}}.dump()});
+        if (!response.ok()) return Result<ScriptResult>::failure(response.code, response.detail);
+        const json result = json::parse(response.value.resultJson);
+        if (result["candidates"].size() != 1 || result["candidates"][0]["text"] != "Save document" ||
+            result["candidates"][0]["screen_bounds"]["x"] != 35) {
+            return Result<ScriptResult>::failure(ErrCode::Internal, "unexpected OCR host response");
+        }
+        return Result<ScriptResult>::success({});
+    };
+
+    const RunReport report = env.run(workflow, confirmed());
+    CHECK(report.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.ocr.requests.size(), size_t(1));
+    CHECK(env.ocr.requests[0].searchRegion.has_value());
+    CHECK_EQ(env.ocr.requests[0].searchRegion->w, 100);
 }
 
 TEST(script_failure_is_attributed_and_continue_policy_runs_following_steps) {

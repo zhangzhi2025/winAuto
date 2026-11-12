@@ -112,6 +112,17 @@ struct FakeElementLocator : IElementLocator {
     }
 };
 
+struct FakeOcrProvider : IOcrProvider {
+    std::function<Result<OcrRecognition>(const OcrRequest&, const CancelToken&)> handler;
+    std::vector<OcrRequest> requests;
+
+    Result<OcrRecognition> recognize(const OcrRequest& request, const CancelToken& token) override {
+        requests.push_back(request);
+        if (handler) return handler(request, token);
+        return Result<OcrRecognition>::failure(ErrCode::ElementNotFound, "no OCR result");
+    }
+};
+
 struct FakeInputController : IInputController {
     std::vector<std::string> actions;
     std::function<Status(const std::string& action)> hook;  // 返回失败则模拟该动作失败

@@ -248,7 +248,7 @@ TEST(type_errors_report_the_json_path) {
 
 TEST(unknown_strategy_and_nested_fallback_are_read_errors) {
     auto r = readWorkflow(R"({"steps":[{"id":"A","type":"click","window":"m",
-                              "locator":{"strategy":"ocr"}}]})");
+                              "locator":{"strategy":"not_a_strategy"}}]})");
     CHECK(r.code == ErrCode::InvalidWorkflow);
     CHECK_CONTAINS(r.detail, "steps[0].locator.strategy");
 
@@ -258,6 +258,27 @@ TEST(unknown_strategy_and_nested_fallback_are_read_errors) {
     CHECK(n.code == ErrCode::InvalidWorkflow);
     CHECK_CONTAINS(n.detail, "steps[0].locator.locators[0]");
     CHECK_CONTAINS(n.detail, "nested fallback");
+}
+
+TEST(ocr_locator_json_roundtrips_all_filters) {
+    const std::string source = R"({"schemaVersion":"1.0","id":"ocr","name":"OCR",
+        "windows":{"main":{"processName":"app.exe"}},
+        "steps":[{"id":"A","type":"click","window":"main","locator":{
+            "strategy":"ocr","text":"Submit","match":"contains","minConfidence":0.8,
+            "keyword":"Sub","direction":"right_front","ambiguity":"first",
+            "searchRegion":{"x":1,"y":2,"width":300,"height":120}}}]})";
+    Workflow wf = mustRead(source);
+    const auto* ocr = std::get_if<OcrLocator>(&*wf.steps[0].locator);
+    CHECK(ocr != nullptr);
+    CHECK_EQ(ocr->text, std::string("Submit"));
+    CHECK(ocr->match == Match::Contains);
+    CHECK_EQ(ocr->keyword, std::string("Sub"));
+    CHECK(ocr->direction == OcrDirection::RightFront);
+    Workflow reread = mustRead(writeWorkflow(wf));
+    const auto* rereadOcr = std::get_if<OcrLocator>(&*reread.steps[0].locator);
+    CHECK(rereadOcr != nullptr);
+    CHECK(rereadOcr->searchRegion.has_value());
+    CHECK_EQ(rereadOcr->searchRegion->w, 300);
 }
 
 TEST(missing_fields_are_read_but_left_to_the_validator) {

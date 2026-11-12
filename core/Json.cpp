@@ -244,6 +244,48 @@ private:
             }
             return l;
         }
+        if (strategy == "ocr") {
+            noteUnknown(v, {"strategy", "text", "match", "minConfidence", "searchRegion", "keyword",
+                            "direction", "ambiguity"}, path);
+            OcrLocator l;
+            l.text = str(v, "text", "", path);
+            if (find(v, "match")) {
+                const std::string m = str(v, "match", "", path);
+                if (m == "exact") l.match = Match::Exact;
+                else if (m == "contains") l.match = Match::Contains;
+                else throw ReadError{childPath(path, "match"), "must be \"exact\" or \"contains\""};
+            }
+            l.minConfidence = number(v, "minConfidence", l.minConfidence, path);
+            l.keyword = str(v, "keyword", "", path);
+            if (find(v, "direction")) {
+                const std::string value = str(v, "direction", "", path);
+                OcrDirection direction;
+                if (!parseOcrDirection(value, &direction)) {
+                    throw ReadError{childPath(path, "direction"),
+                                    "must be one of left, left_front, front, right_front, right, "
+                                    "right_back, back, left_back"};
+                }
+                l.direction = direction;
+            }
+            if (find(v, "ambiguity")) {
+                const std::string a = str(v, "ambiguity", "", path);
+                if (a == "error") l.ambiguity = Ambiguity::Error;
+                else if (a == "first") l.ambiguity = Ambiguity::First;
+                else throw ReadError{childPath(path, "ambiguity"), "must be \"error\" or \"first\""};
+            }
+            if (const json* r = find(v, "searchRegion")) {
+                const std::string rp = childPath(path, "searchRegion");
+                requireObject(*r, rp);
+                noteUnknown(*r, {"x", "y", "width", "height"}, rp);
+                Rect rect;
+                rect.x = integer(*r, "x", 0, rp);
+                rect.y = integer(*r, "y", 0, rp);
+                rect.w = integer(*r, "width", 0, rp);
+                rect.h = integer(*r, "height", 0, rp);
+                l.searchRegion = rect;
+            }
+            return l;
+        }
         throw ReadError{childPath(path, "strategy"), "unknown strategy \"" + strategy + "\""};
     }
 
@@ -478,6 +520,21 @@ ojson writeLeaf(const LeafLocator& loc) {
             r["y"] = im->searchRegion->y;
             r["width"] = im->searchRegion->w;
             r["height"] = im->searchRegion->h;
+            j["searchRegion"] = r;
+        }
+    } else if (const auto* ocr = std::get_if<OcrLocator>(&loc)) {
+        j["text"] = ocr->text;
+        j["match"] = ocr->match == Match::Exact ? "exact" : "contains";
+        j["minConfidence"] = ocr->minConfidence;
+        if (!ocr->keyword.empty()) j["keyword"] = ocr->keyword;
+        if (ocr->direction) j["direction"] = toString(*ocr->direction);
+        j["ambiguity"] = ocr->ambiguity == Ambiguity::Error ? "error" : "first";
+        if (ocr->searchRegion) {
+            ojson r = ojson::object();
+            r["x"] = ocr->searchRegion->x;
+            r["y"] = ocr->searchRegion->y;
+            r["width"] = ocr->searchRegion->w;
+            r["height"] = ocr->searchRegion->h;
             j["searchRegion"] = r;
         }
     }

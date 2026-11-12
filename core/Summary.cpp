@@ -42,6 +42,8 @@ std::string describeLeaf(const LeafLocator& l) {
         os << "screen_point(" << s->x << "," << s->y << ")";
     } else if (const auto* i = std::get_if<ImageLocator>(&l)) {
         os << "image(" << i->templatePath << ")";
+    } else if (std::holds_alternative<OcrLocator>(l)) {
+        os << "ocr";
     }
     return os.str();
 }

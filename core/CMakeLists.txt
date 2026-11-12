@@ -1,6 +1,7 @@
 add_library(winauto_core STATIC
     ErrCode.cpp
     Model.cpp
+    OcrMatch.cpp
     Json.cpp
     Validator.cpp
     ExecutionState.cpp

@@ -159,6 +159,26 @@ public:
                 warn(sub(path, "minConfidence"), "low_confidence",
                      "a minConfidence below 0.7 can match the wrong area; prefer a distinctive template instead");
             }
+        } else if (const auto* ocr = std::get_if<OcrLocator>(&loc)) {
+            if (ocr->text.empty() && ocr->keyword.empty()) {
+                error(path, "ocr_no_condition", "ocr locator needs text or keyword");
+            }
+            if (!std::isfinite(ocr->minConfidence) || ocr->minConfidence < 0.0 ||
+                ocr->minConfidence > 1.0) {
+                error(sub(path, "minConfidence"), "out_of_range",
+                      "minConfidence must be between 0 and 1");
+            } else if (ocr->minConfidence < 0.7) {
+                warn(sub(path, "minConfidence"), "low_confidence",
+                     "a minConfidence below 0.7 can match incorrect text");
+            }
+            if (ocr->searchRegion && (ocr->searchRegion->w <= 0 || ocr->searchRegion->h <= 0)) {
+                error(sub(path, "searchRegion"), "out_of_range",
+                      "searchRegion width and height must be positive");
+            }
+            if (ocr->ambiguity == Ambiguity::First) {
+                warn(path, "ambiguity_first",
+                     "ambiguity=first picks the top-most match when several text regions match");
+            }
         }
     }
 

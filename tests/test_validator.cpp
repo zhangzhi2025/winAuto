@@ -282,6 +282,19 @@ TEST(set_value_needs_locator_and_text) {
     CHECK(r.has("text_required"));
 }
 
+TEST(ocr_locator_requires_text_or_keyword_and_valid_ranges) {
+    Step s = step("OCR", StepType::AssertElement);
+    s.locator = Locator{OcrLocator{}};
+    CHECK(check(withStep(s)).has("ocr_no_condition"));
+    OcrLocator ocr;
+    ocr.keyword = "开始";
+    ocr.minConfidence = 1.1;
+    ocr.searchRegion = Rect{0, 0, 10, 0};
+    s.locator = Locator{ocr};
+    const auto report = check(withStep(s));
+    CHECK(report.has("out_of_range"));
+}
+
 TEST(wait_requires_duration_within_range) {
     Step w = step("W", StepType::Wait, "");
     CHECK(check(withStep(w)).has("missing_field"));

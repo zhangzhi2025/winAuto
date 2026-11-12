@@ -16,6 +16,7 @@ struct Env {
     FakeClock clock;
     FakeWindowProvider windows;
     FakeElementLocator locator;
+    FakeOcrProvider ocr;
     FakeInputController input;
     FakeProcessLauncher processes;
     CancelToken token;
@@ -29,6 +30,7 @@ struct Env {
         EngineDeps deps;
         deps.windows = &windows;
         deps.locator = &locator;
+        deps.ocr = &ocr;
         deps.input = &input;
         deps.clock = &clock;
         deps.processes = &processes;
@@ -80,6 +82,29 @@ TEST(runs_all_steps_in_order_and_records_timing) {
     CHECK_EQ(r.steps[4].durationMs, 250);       // wait 步骤耗时来自（虚拟）时钟
     CHECK(r.steps[4].startMs >= r.steps[3].startMs);
     CHECK_EQ(r.steps[0].attempts, 1);
+}
+
+TEST(ocr_locator_filters_candidates_and_returns_text_region) {
+    Env env;
+    OcrRecognition recognition;
+    recognition.clientBounds = Rect{100, 100, 400, 300};
+    recognition.candidates = {
+        OcrTextCandidate{"Submit now", Rect{5, 5, 30, 12}, Rect{110, 110, 30, 12}, 0.95, 0.9, 0},
+        OcrTextCandidate{"Submit later", Rect{80, 5, 30, 12}, Rect{185, 110, 30, 12}, 0.95, 0.9, 1},
+        OcrTextCandidate{"Cancel", Rect{5, 40, 30, 12}, Rect{110, 145, 30, 12}, 0.99, 0.9, 2}};
+    env.ocr.handler = [recognition](const OcrRequest&, const CancelToken&) {
+        return Result<OcrRecognition>::success(recognition);
+    };
+    OcrLocator locator;
+    locator.keyword = "Submit";
+    locator.direction = OcrDirection::LeftFront;
+    locator.ambiguity = Ambiguity::First;
+    Step target = step("OCR", StepType::AssertElement);
+    target.locator = Locator{locator};
+    RunReport report = env.run(flow({target}));
+    CHECK(report.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.ocr.requests.size(), size_t(1));
+    CHECK_EQ(report.steps.size(), size_t(1));
 }
 
 TEST(launch_program_binds_the_unique_window_from_its_process) {

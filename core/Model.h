@@ -67,7 +67,20 @@ struct ImageLocator {
     Ambiguity ambiguity = Ambiguity::Error;
 };
 
-using LeafLocator = std::variant<UiaLocator, WindowPointLocator, ScreenPointLocator, ImageLocator>;
+enum class OcrDirection { Left, LeftFront, Front, RightFront, Right, RightBack, Back, LeftBack };
+
+struct OcrLocator {
+    std::string text;
+    Match match = Match::Exact;
+    double minConfidence = 0.7;
+    std::optional<Rect> searchRegion;
+    std::string keyword;
+    std::optional<OcrDirection> direction;
+    Ambiguity ambiguity = Ambiguity::Error;
+};
+
+using LeafLocator =
+    std::variant<UiaLocator, WindowPointLocator, ScreenPointLocator, ImageLocator, OcrLocator>;
 
 // 回退链：按顺序尝试。仅在 ElementNotFound 时进入下一个，歧义直接失败。
 // items 是 LeafLocator，因此"fallback 嵌套 fallback"在类型上就不可表达。
@@ -76,10 +89,12 @@ struct FallbackLocator {
 };
 
 using Locator =
-    std::variant<UiaLocator, WindowPointLocator, ScreenPointLocator, ImageLocator, FallbackLocator>;
+    std::variant<UiaLocator, WindowPointLocator, ScreenPointLocator, ImageLocator, OcrLocator, FallbackLocator>;
 
 const char* strategyName(const Locator& l);      // "uia" / "window_point" / ...
 const char* strategyName(const LeafLocator& l);
+const char* toString(OcrDirection direction);
+bool parseOcrDirection(const std::string& value, OcrDirection* direction);
 
 // ---------------------------------------------------------------- 步骤
 

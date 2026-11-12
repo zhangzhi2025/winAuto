@@ -10,6 +10,7 @@ const char* strategyOf(const V& v) {
         const char* operator()(const WindowPointLocator&) const { return "window_point"; }
         const char* operator()(const ScreenPointLocator&) const { return "screen_point"; }
         const char* operator()(const ImageLocator&) const { return "image"; }
+        const char* operator()(const OcrLocator&) const { return "ocr"; }
         const char* operator()(const FallbackLocator&) const { return "fallback"; }
     };
     return std::visit(Visitor{}, v);
@@ -18,6 +19,34 @@ const char* strategyOf(const V& v) {
 
 const char* strategyName(const Locator& l) { return strategyOf(l); }
 const char* strategyName(const LeafLocator& l) { return strategyOf(l); }
+
+const char* toString(OcrDirection direction) {
+    switch (direction) {
+        case OcrDirection::Left: return "left";
+        case OcrDirection::LeftFront: return "left_front";
+        case OcrDirection::Front: return "front";
+        case OcrDirection::RightFront: return "right_front";
+        case OcrDirection::Right: return "right";
+        case OcrDirection::RightBack: return "right_back";
+        case OcrDirection::Back: return "back";
+        case OcrDirection::LeftBack: return "left_back";
+    }
+    return "left";
+}
+
+bool parseOcrDirection(const std::string& value, OcrDirection* direction) {
+    if (!direction) return false;
+    static const OcrDirection directions[] = {
+        OcrDirection::Left,      OcrDirection::LeftFront, OcrDirection::Front,    OcrDirection::RightFront,
+        OcrDirection::Right,     OcrDirection::RightBack, OcrDirection::Back,     OcrDirection::LeftBack};
+    for (const OcrDirection candidate : directions) {
+        if (value == toString(candidate)) {
+            *direction = candidate;
+            return true;
+        }
+    }
+    return false;
+}
 
 const char* toString(StepType t) {
     switch (t) {

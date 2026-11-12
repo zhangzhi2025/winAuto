@@ -2,6 +2,9 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -61,6 +64,7 @@ void StepPanel::buildUi() {
     locator_->setFixedHeight(110);
     auto* pick = new QPushButton(QStringLiteral("拾取控件…"), this);
     auto* capture = new QPushButton(QStringLiteral("截取模板…"), this);
+    auto* ocrEditor = new QPushButton(QStringLiteral("OCR 定位器…"), this);
     capture->setToolTip(QStringLiteral("截下目标窗口当前画面，框选一块作为图像模板（image 定位器）"));
     locatorBox_ = new QWidget(this);
     auto* lb = new QVBoxLayout(locatorBox_);
@@ -69,6 +73,7 @@ void StepPanel::buildUi() {
     auto* lrow = new QHBoxLayout();
     lrow->addWidget(pick);
     lrow->addWidget(capture);
+    lrow->addWidget(ocrEditor);
     lb->addLayout(lrow);
 
     clickMode_ = new QComboBox(this);
@@ -238,6 +243,76 @@ void StepPanel::buildUi() {
     connect(capture, &QPushButton::clicked, this, [this] { emit captureRequested(TargetLocator); });
     connect(captureExpect, &QPushButton::clicked, this, [this] { emit captureRequested(TargetExpect); });
     connect(captureCond, &QPushButton::clicked, this, [this] { emit captureRequested(TargetCondition); });
+    connect(ocrEditor, &QPushButton::clicked, this, [this] {
+        QDialog dialog(this);
+        dialog.setWindowTitle(QStringLiteral("OCR 定位器"));
+        auto* form = new QFormLayout(&dialog);
+        auto* query = new QLineEdit(&dialog);
+        auto* match = new QComboBox(&dialog);
+        match->addItem(QStringLiteral("完全匹配"), QStringLiteral("exact"));
+        match->addItem(QStringLiteral("包含"), QStringLiteral("contains"));
+        auto* keyword = new QLineEdit(&dialog);
+        auto* confidence = new QDoubleSpinBox(&dialog);
+        confidence->setRange(0.0, 1.0);
+        confidence->setSingleStep(0.05);
+        confidence->setDecimals(2);
+        auto* direction = new QComboBox(&dialog);
+        direction->addItem(QStringLiteral("不筛选"), QString());
+        const std::pair<const char*, const char*> directions[] = {
+            {"left", "左"}, {"left_front", "左前"}, {"front", "上"}, {"right_front", "右前"},
+            {"right", "右"}, {"right_back", "右后"}, {"back", "下"}, {"left_back", "左后"}};
+        for (const auto& item : directions) direction->addItem(QString::fromUtf8(item.second), item.first);
+        auto* ambiguity = new QComboBox(&dialog);
+        ambiguity->addItem(QStringLiteral("多个匹配时报错"), QStringLiteral("error"));
+        ambiguity->addItem(QStringLiteral("取最靠上匹配"), QStringLiteral("first"));
+        form->addRow(QStringLiteral("目标文字"), query);
+        form->addRow(QStringLiteral("匹配方式"), match);
+        form->addRow(QStringLiteral("关键词前缀（可选）"), keyword);
+        form->addRow(QStringLiteral("最低识别置信度"), confidence);
+        form->addRow(QStringLiteral("方向（相对窗口中心）"), direction);
+        form->addRow(QStringLiteral("多个候选"), ambiguity);
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+        form->addRow(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+        const auto existing = wa::readLocatorJson(stdStr(locator_->toPlainText().trimmed()));
+        if (existing.ok()) {
+            if (const auto* locator = std::get_if<wa::OcrLocator>(&existing.value)) {
+                query->setText(qs(locator->text));
+                match->setCurrentIndex(match->findData(locator->match == wa::Match::Exact
+                                                           ? QStringLiteral("exact")
+                                                           : QStringLiteral("contains")));
+                keyword->setText(qs(locator->keyword));
+                confidence->setValue(locator->minConfidence);
+                direction->setCurrentIndex(direction->findData(
+                    locator->direction ? QString::fromLatin1(wa::toString(*locator->direction)) : QString()));
+                ambiguity->setCurrentIndex(ambiguity->findData(
+                    locator->ambiguity == wa::Ambiguity::First ? QStringLiteral("first")
+                                                                : QStringLiteral("error")));
+            }
+        }
+        if (dialog.exec() != QDialog::Accepted) return;
+        wa::OcrLocator locator;
+        locator.text = stdStr(query->text());
+        locator.match = match->currentData().toString() == QStringLiteral("contains")
+                            ? wa::Match::Contains
+                            : wa::Match::Exact;
+        locator.keyword = stdStr(keyword->text());
+        locator.minConfidence = confidence->value();
+        const QString selectedDirection = direction->currentData().toString();
+        if (!selectedDirection.isEmpty()) {
+            wa::OcrDirection parsedDirection;
+            if (wa::parseOcrDirection(stdStr(selectedDirection), &parsedDirection)) {
+                locator.direction = parsedDirection;
+            }
+        }
+        locator.ambiguity = ambiguity->currentData().toString() == QStringLiteral("first")
+                                ? wa::Ambiguity::First
+                                : wa::Ambiguity::Error;
+        locator_->setPlainText(qs(wa::locatorToJson(wa::Locator{locator})));
+        onFormChanged();
+    });
 
     clearStep();
 }

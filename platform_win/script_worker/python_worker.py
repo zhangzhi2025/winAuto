@@ -99,6 +99,15 @@ class Automation:
     def hotkey(window, keys):
         return call("input.hotkey", {"window": window, "keys": keys})
 
+    @staticmethod
+    def ocr(window, keyword=None, search_region=None):
+        arguments = {"window": window}
+        if keyword is not None:
+            arguments["keyword"] = keyword
+        if search_region is not None:
+            arguments["searchRegion"] = search_region
+        return call("ocr.recognize", arguments).get("candidates", [])
+
 
 def main():
     start = receive()

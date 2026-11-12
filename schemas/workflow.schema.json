@@ -355,6 +355,60 @@
         }
       }
     },
+    "ocrLocator": {
+      "type": "object",
+      "required": [
+        "strategy"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": ["text"]
+        },
+        {
+          "required": ["keyword"]
+        }
+      ],
+      "properties": {
+        "strategy": {
+          "const": "ocr"
+        },
+        "text": {
+          "type": "string"
+        },
+        "match": {
+          "enum": ["exact", "contains"]
+        },
+        "minConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "keyword": {
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "left", "left_front", "front", "right_front",
+            "right", "right_back", "back", "left_back"
+          ]
+        },
+        "ambiguity": {
+          "enum": ["error", "first"]
+        },
+        "searchRegion": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
     "leafLocator": {
       "oneOf": [
         {
@@ -368,6 +422,9 @@
         },
         {
           "$ref": "#/definitions/imageLocator"
+        },
+        {
+          "$ref": "#/definitions/ocrLocator"
         }
       ]
     },
@@ -404,6 +461,9 @@
         },
         {
           "$ref": "#/definitions/imageLocator"
+        },
+        {
+          "$ref": "#/definitions/ocrLocator"
         },
         {
           "$ref": "#/definitions/fallbackLocator"

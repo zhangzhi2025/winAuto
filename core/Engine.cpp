@@ -12,6 +12,7 @@
 
 #include "core/Validator.h"
 #include "core/Json.h"
+#include "core/OcrMatch.h"
 #include "nlohmann/json.hpp"
 
 namespace wa {
@@ -25,6 +26,7 @@ bool asLeaf(const Locator& loc, LeafLocator* out) {
     if (const auto* w = std::get_if<WindowPointLocator>(&loc)) { *out = *w; return true; }
     if (const auto* s = std::get_if<ScreenPointLocator>(&loc)) { *out = *s; return true; }
     if (const auto* i = std::get_if<ImageLocator>(&loc)) { *out = *i; return true; }
+    if (const auto* o = std::get_if<OcrLocator>(&loc)) { *out = *o; return true; }
     return false;
 }
 
@@ -201,6 +203,29 @@ struct WorkflowEngine::Run {
     }
 
     // ------------------------------------------------------------ 定位
+    Result<ElementRef> locateLeaf(std::uint64_t handle, const LeafLocator& locator,
+                                  const CancelToken& locateToken) {
+        const auto* ocr = std::get_if<OcrLocator>(&locator);
+        if (!ocr) return deps.locator->locate(handle, locator, locateToken);
+        if (!deps.ocr) return Result<ElementRef>::failure(ErrCode::Unsupported, "OCR provider is unavailable");
+        Result<OcrRecognition> recognized = deps.ocr->recognize(
+            OcrRequest{handle, ocr->searchRegion}, locateToken);
+        if (!recognized.ok()) return Result<ElementRef>::failure(recognized.code, recognized.detail);
+        std::vector<OcrTextCandidate> matches = filterOcrCandidates(*ocr, recognized.value);
+        if (matches.empty()) return Result<ElementRef>::failure(ErrCode::ElementNotFound, "OCR text not found");
+        if (matches.size() > 1 && ocr->ambiguity == Ambiguity::Error) {
+            return Result<ElementRef>::failure(ErrCode::ElementAmbiguous,
+                                               "OCR matched " + std::to_string(matches.size()) + " text regions");
+        }
+        if (matches.size() > 1) {
+            ;//log(LogLevel::Warning, "", "OCR ambiguity=first selected the top-most matching text region");
+        }
+        ElementRef element;
+        element.bounds = matches.front().screenBounds;
+        element.name = matches.front().text;
+        return Result<ElementRef>::success(std::move(element));
+    }
+
     // 单次定位。fallback 规则：
     //   - ElementNotFound：试下一个
     //   - Unsupported（该策略当前平台不可用，如还没实现的 uia/image）：跳过，试下一个
@@ -212,7 +237,7 @@ struct WorkflowEngine::Run {
             bool sawNotFound = false;
             std::string unsupportedDetail;
             for (const auto& item : fb->items) {
-                Result<ElementRef> r = deps.locator->locate(handle, item, token);
+                Result<ElementRef> r = locateLeaf(handle, item, token);
                 if (r.ok()) return r;
                 if (r.code == ErrCode::ElementNotFound) {
                     sawNotFound = true;
@@ -231,7 +256,7 @@ struct WorkflowEngine::Run {
         }
         LeafLocator leaf;
         if (!asLeaf(loc, &leaf)) return Result<ElementRef>::failure(ErrCode::Internal, "bad locator");
-        return deps.locator->locate(handle, leaf, token);
+        return locateLeaf(handle, leaf, token);
     }
 
     // 轮询直到找到或超时。timeoutCode：超时时返回的错误码。
@@ -433,7 +458,8 @@ struct WorkflowEngine::Run {
                                       request.operation == "element.set_value";
         const bool inputOperation = request.operation == "input.text" ||
                                     request.operation == "input.hotkey";
-        if (!elementOperation && !inputOperation) {
+        const bool ocrOperation = request.operation == "ocr.recognize";
+        if (!elementOperation && !inputOperation && !ocrOperation) {
             return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "unsupported script host operation");
         }
         const std::string* alias = stringArg("window");
@@ -444,6 +470,54 @@ struct WorkflowEngine::Run {
         const std::uint64_t handle = handleIt->second;
         if (!deps.windows->isWindowValid(handle)) {
             return Result<ScriptHostResponse>::failure(ErrCode::WindowNotFound, "workflow window is no longer valid");
+        }
+        if (ocrOperation) {
+            if (!deps.ocr) return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "OCR provider is unavailable");
+            if (args.contains("keyword") && !args["keyword"].is_string()) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "OCR keyword must be a string");
+            }
+            OcrRequest ocrRequest;
+            ocrRequest.windowHandle = handle;
+            if (const auto region = args.find("searchRegion"); region != args.end()) {
+                if (!region->is_object() || !region->contains("x") || !region->contains("y") ||
+                    !region->contains("width") || !region->contains("height") ||
+                    !(*region)["x"].is_number_integer() || !(*region)["y"].is_number_integer() ||
+                    !(*region)["width"].is_number_integer() || !(*region)["height"].is_number_integer()) {
+                    return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid OCR searchRegion");
+                }
+                Rect bounds;
+                try {
+                    bounds = Rect{(*region)["x"].get<int>(), (*region)["y"].get<int>(),
+                                  (*region)["width"].get<int>(), (*region)["height"].get<int>()};
+                } catch (const json::exception&) {
+                    return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid OCR searchRegion");
+                }
+                if (bounds.w <= 0 || bounds.h <= 0) {
+                    return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "invalid OCR searchRegion");
+                }
+                ocrRequest.searchRegion = bounds;
+            }
+            Result<OcrRecognition> recognized = deps.ocr->recognize(
+                ocrRequest, scriptCancellation ? *scriptCancellation : token);
+            if (!recognized.ok()) return Result<ScriptHostResponse>::failure(recognized.code, recognized.detail);
+            const std::string* keyword = stringArg("keyword");
+            json blocks = json::array();
+            for (const auto& candidate : recognized.value.candidates) {
+                if (keyword && (candidate.text.size() < keyword->size() ||
+                    candidate.text.compare(0, keyword->size(), *keyword) != 0)) continue;
+                blocks.push_back(json{{"text", candidate.text},
+                                  {"image_bounds", {{"x", candidate.imageBounds.x},
+                                                    {"y", candidate.imageBounds.y},
+                                                    {"width", candidate.imageBounds.w},
+                                                    {"height", candidate.imageBounds.h}}},
+                                  {"screen_bounds", {{"x", candidate.screenBounds.x},
+                                                     {"y", candidate.screenBounds.y},
+                                                     {"width", candidate.screenBounds.w},
+                                                     {"height", candidate.screenBounds.h}}},
+                                  {"recognition_confidence", candidate.recognitionConfidence},
+                                  {"detection_confidence", candidate.detectionConfidence}});
+            }
+            return success(json{{"candidates", std::move(blocks)}});
         }
         if (request.operation == "input.text" || request.operation == "input.hotkey") {
             if (!deps.windows->isForeground(handle)) {
@@ -519,7 +593,7 @@ struct WorkflowEngine::Run {
             return Result<ScriptHostResponse>::failure(ErrCode::Unsupported, "fallback locators are not supported by scripts");
         }
         const CancelToken& hostToken = scriptCancellation ? *scriptCancellation : token;
-        Result<ElementRef> found = deps.locator->locate(handle, locator, hostToken);
+        Result<ElementRef> found = locateLeaf(handle, locator, hostToken);
         if (!found.ok()) return Result<ScriptHostResponse>::failure(found.code, found.detail);
         if (token.isCancelled()) {
             return Result<ScriptHostResponse>::failure(ErrCode::Cancelled, "script cancelled");

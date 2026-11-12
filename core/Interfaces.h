@@ -58,6 +58,31 @@ public:
                                       const CancelToken& token) = 0;
 };
 
+struct OcrTextCandidate {
+    std::string text;
+    Rect imageBounds;
+    Rect screenBounds;
+    double recognitionConfidence = 0.0;
+    double detectionConfidence = 0.0;
+    size_t order = 0;
+};
+
+struct OcrRecognition {
+    Rect clientBounds;
+    std::vector<OcrTextCandidate> candidates;
+};
+
+struct OcrRequest {
+    std::uint64_t windowHandle = 0;
+    std::optional<Rect> searchRegion;
+};
+
+class IOcrProvider {
+public:
+    virtual ~IOcrProvider() = default;
+    virtual Result<OcrRecognition> recognize(const OcrRequest& request, const CancelToken& token) = 0;
+};
+
 class IInputController {
 public:
     virtual ~IInputController() = default;

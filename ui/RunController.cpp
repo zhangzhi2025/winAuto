@@ -21,6 +21,9 @@
 #include "Win32UiaLocator.h"
 #include "Win32WindowProvider.h"
 #include "Win32ProcessLauncher.h"
+#ifdef WINAUTO_ENABLE_OCR
+#include "Win32OcrProvider.h"
+#endif
 #endif
 
 RunWorker::RunWorker(wa::Workflow wf, wa::RunOptions options, bool startPaused, RunController* promptOwner,
@@ -66,6 +69,9 @@ void RunWorker::run() {
     wa::platform::Win32Screenshot screenshot;
     wa::platform::ScriptWorker scripts;
     wa::platform::Win32ProcessLauncher processes;
+#ifdef WINAUTO_ENABLE_OCR
+    wa::platform::Win32OcrProvider ocr(wa::platform::defaultOcrModelPaths());
+#endif
     wa::SteadyClock clock;
 
     gate_.startPaused(startPaused_);
@@ -80,6 +86,9 @@ void RunWorker::run() {
     deps.screenshot = &screenshot;
     deps.scripts = &scripts;
     deps.processes = &processes;
+#ifdef WINAUTO_ENABLE_OCR
+    deps.ocr = &ocr;
+#endif
     deps.beforeStep = [this](const wa::Step& s, size_t i) { return gate_.gate(s, i); };
     deps.prompt = [this](const wa::Step& s) -> wa::Result<std::string> {
         QString text;

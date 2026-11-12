@@ -23,74 +23,49 @@ add_library(winauto_platform STATIC
     WindowGrab.cpp
 )
 if(WINAUTO_ENABLE_OCR)
-    if(NOT WIN32)
-        message(FATAL_ERROR "WINAUTO_ENABLE_OCR is supported only on Windows.")
-    endif()
-    set(RAPIDOCR_ROOT "${CMAKE_SOURCE_DIR}/third_party/RapidOcrOnnx")
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(RAPIDOCR_ARCH "windows-x64")
-    else()
-        set(RAPIDOCR_ARCH "windows-x86")
-    endif()
-    set(ONNXRUNTIME_CONFIG_DIR "${RAPIDOCR_ROOT}/onnxruntime-static/${RAPIDOCR_ARCH}")
-    set(OPENCV_CONFIG_DIR "${RAPIDOCR_ROOT}/opencv-static/${RAPIDOCR_ARCH}")
-    if(NOT EXISTS "${ONNXRUNTIME_CONFIG_DIR}/OnnxRuntimeConfig.cmake")
+    if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
         message(FATAL_ERROR
-            "OCR was requested, but the bundled ONNX Runtime package is missing for ${RAPIDOCR_ARCH}. "
-            "Install the RapidOcrOnnx MSVC libraries under ${ONNXRUNTIME_CONFIG_DIR}, or configure with "
-            "-DWINAUTO_ENABLE_OCR=OFF.")
+            "The bundled RapidOcrOnnx package is Win32 only. Configure with -A Win32, or disable OCR.")
     endif()
-    if(NOT EXISTS "${OPENCV_CONFIG_DIR}/OpenCVConfig.cmake")
-        message(FATAL_ERROR
-            "OCR was requested, but the bundled OpenCV package is missing for ${RAPIDOCR_ARCH}. "
-            "Install the RapidOcrOnnx MSVC libraries under ${OPENCV_CONFIG_DIR}, or configure with "
-            "-DWINAUTO_ENABLE_OCR=OFF.")
-    endif()
-    find_package(OnnxRuntime CONFIG REQUIRED PATHS "${ONNXRUNTIME_CONFIG_DIR}" NO_DEFAULT_PATH)
-    find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc PATHS "${OPENCV_CONFIG_DIR}" NO_DEFAULT_PATH)
-
-    set(RAPIDOCR_SOURCE_DIR "${RAPIDOCR_ROOT}/src")
-    set(RAPIDOCR_SOURCES
-        "${RAPIDOCR_SOURCE_DIR}/AngleNet.cpp"
-        "${RAPIDOCR_SOURCE_DIR}/clipper.cpp"
-        "${RAPIDOCR_SOURCE_DIR}/CrnnNet.cpp"
-        "${RAPIDOCR_SOURCE_DIR}/DbNet.cpp"
-        "${RAPIDOCR_SOURCE_DIR}/OcrLite.cpp"
-        "${RAPIDOCR_SOURCE_DIR}/OcrUtils.cpp")
-    target_sources(winauto_platform PRIVATE OcrRuntime.cpp Win32OcrProvider.cpp ${RAPIDOCR_SOURCES})
-    target_include_directories(winauto_platform SYSTEM PRIVATE
-        "${RAPIDOCR_ROOT}/include"
-        ${OnnxRuntime_INCLUDE_DIRS}
-        ${OpenCV_INCLUDE_DIRS})
-    target_link_directories(winauto_platform PRIVATE ${OnnxRuntime_LIBRARY_DIRS})
-    target_link_libraries(winauto_platform PRIVATE ${OnnxRuntime_LIBS} ${OpenCV_LIBS})
+    set(RAPIDOCR_ROOT "${CMAKE_SOURCE_DIR}/third_party/rapidocr/win-CLIB-CPU-Win32")
+    set(RAPIDOCR_INCLUDE_DIR "${RAPIDOCR_ROOT}/include")
+    set(RAPIDOCR_LIBRARY "${RAPIDOCR_ROOT}/lib/RapidOcrOnnx.lib")
+    set(RAPIDOCR_DLL "${RAPIDOCR_ROOT}/bin/RapidOcrOnnx.dll")
+    foreach(required_file
+            "${RAPIDOCR_INCLUDE_DIR}/OcrLiteCApi.h"
+            "${RAPIDOCR_LIBRARY}"
+            "${RAPIDOCR_DLL}")
+        if(NOT EXISTS "${required_file}")
+            message(FATAL_ERROR "RapidOcrOnnx Win32 package file is missing: ${required_file}")
+        endif()
+    endforeach()
+    target_sources(winauto_platform PRIVATE OcrRuntime.cpp Win32OcrProvider.cpp)
+    target_include_directories(winauto_platform SYSTEM PRIVATE "${RAPIDOCR_INCLUDE_DIR}")
+    target_link_libraries(winauto_platform PRIVATE "${RAPIDOCR_LIBRARY}")
     target_compile_definitions(winauto_platform PUBLIC WINAUTO_ENABLE_OCR=1)
-    file(GLOB RAPIDOCR_RUNTIME_DLLS
-        "${ONNXRUNTIME_CONFIG_DIR}/bin/*.dll"
-        "${ONNXRUNTIME_CONFIG_DIR}/lib/*.dll"
-        "${OPENCV_CONFIG_DIR}/bin/*.dll")
-    set_property(TARGET winauto_platform PROPERTY WINAUTO_OCR_RUNTIME_DLLS "${RAPIDOCR_RUNTIME_DLLS}")
+    set_property(TARGET winauto_platform PROPERTY WINAUTO_OCR_RUNTIME_DLLS "${RAPIDOCR_DLL}")
 
-    set(RAPIDOCR_MODEL_DIR "${RAPIDOCR_ROOT}/models")
-    foreach(model
-            ch_PP-OCRv3_det_infer.onnx
-            ch_ppocr_mobile_v2.0_cls_train.onnx
-            ch_PP-OCRv3_rec_infer.onnx
-            en_PP-OCRv3_rec_infer.onnx
-            ppocr_keys_v1.txt)
-        if(NOT EXISTS "${RAPIDOCR_MODEL_DIR}/${model}")
-            message(FATAL_ERROR "OCR model asset is missing: ${RAPIDOCR_MODEL_DIR}/${model}")
+    set(RAPIDOCR_SOURCE_MODEL_DIR "${CMAKE_SOURCE_DIR}/third_party/rapidocr/models")
+    set(RAPIDOCR_MODELS
+        ch_PP-OCRv3_det_infer.onnx
+        ch_ppocr_mobile_v2.0_cls_train.onnx
+        ch_PP-OCRv3_rec_infer.onnx
+        ppocr_keys_v1.txt)
+    foreach(model IN LISTS RAPIDOCR_MODELS)
+        if(NOT EXISTS "${RAPIDOCR_SOURCE_MODEL_DIR}/${model}")
+            message(FATAL_ERROR "OCR model asset is missing: ${RAPIDOCR_SOURCE_MODEL_DIR}/${model}")
         endif()
         file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/models")
-        configure_file("${RAPIDOCR_MODEL_DIR}/${model}" "${CMAKE_BINARY_DIR}/models/${model}" COPYONLY)
+        configure_file("${RAPIDOCR_SOURCE_MODEL_DIR}/${model}"
+                       "${CMAKE_BINARY_DIR}/models/${model}" COPYONLY)
     endforeach()
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/RapidOcrOnnx/images/1.jpg")
+        message(FATAL_ERROR "OCR verification image is missing: third_party/RapidOcrOnnx/images/1.jpg")
+    endif()
+    configure_file("${CMAKE_SOURCE_DIR}/third_party/RapidOcrOnnx/images/1.jpg"
+                   "${CMAKE_BINARY_DIR}/models/ocr-smoke-test.jpg" COPYONLY)
     target_compile_definitions(winauto_platform PRIVATE
         WINAUTO_OCR_MODEL_DIR="${CMAKE_BINARY_DIR}/models")
-    if(MSVC)
-        set_source_files_properties(${RAPIDOCR_SOURCES} PROPERTIES COMPILE_OPTIONS "/W0")
-    else()
-        set_source_files_properties(${RAPIDOCR_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
-    endif()
 endif()
 target_include_directories(winauto_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(winauto_platform SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party)

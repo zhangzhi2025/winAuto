@@ -14,6 +14,7 @@
 | 4 流程编辑器 UI | ✅ 已在 Windows 验证 | 步骤列表/属性面板/窗口选择/控件拾取/单步调试/运行日志 |
 | 5 图像识别 | 🟡 代码完成，待 Windows 编译与验证 | 灰度 ZNCC 模板匹配（core，已测试）+ GDI 截屏 + WIC 读图；`shot` / `find-image` 命令；清单见 `tests/manual/stage5-windows-checklist.md` |
 | 6 截取模板 / 失败截图 / 剪贴板输入 / 条件与循环 | 🟡 代码完成，待 Windows 编译与验证 | 界面"截取模板"按钮 + core 模板评估；失败时截取目标窗口；剪贴板粘贴（备份/还原/不进历史）；`if` / `repeat` / `while`；清单见 `tests/manual/stage6-windows-checklist.md` |
+| OCR RapidOcrOnnx CLIB | 🟡 Win32 DLL/script OCR 已接入，定位待 region API | 使用 `third_party/rapidocr/win-CLIB-CPU-Win32` 与 `third_party/rapidocr/models`；当前 DLL 只返回纯文字，不提供文字框，因此不能进行 OCR 点击定位或方向筛选 |
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
 
@@ -29,6 +30,8 @@ cmake --build build --config Debug
 cd build
 ctest -C Debug --output-on-failure
 ```
+
+若使用 `third_party/rapidocr/win-CLIB-CPU-Win32` 的 RapidOcrOnnx DLL，需用 `-A Win32` 并追加 `-DWINAUTO_ENABLE_OCR=ON`。CMake 会复制 DLL 与模型到程序输出目录。该 CLIB API 仅返回拼接文字，脚本可通过 `automation.ocr("窗口别名")` 读取 `text`；需要 OCR 区域定位/点击时，必须换用返回文字框坐标的 RapidOcrOnnx 接口。
 
 - 找不到 Qt Widgets/Network 或 WebSockets 时会明确跳过 `ui`，core、cli 和不依赖 Qt 的测试照常构建。
 - 也可以直接用 Visual Studio 的"打开本地文件夹"打开本目录（CMake 项目）。
@@ -96,7 +99,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 ## 流程 JSON v1 要点
 
 - `windows` 是别名表，步骤用 `window` 引用别名，因此支持多窗口流程。
-- 定位策略字面值：`uia`、`window_point`、`screen_point`、`image`、`fallback`。
+- 定位策略字面值：`uia`、`window_point`、`screen_point`、`image`、`ocr`、`fallback`。OCR locator 需要 provider 返回文字框坐标；当前 CLIB DLL 不提供该数据，因此会明确报 `Unsupported`。
 - `window_point` 基准是窗口 **client 区域**，物理像素；`anchor` 可选 `top_left`（默认）、`bottom_right`、`ratio`（0..1 比例）。
 - 脚本专用鼠标动作：`mouse_move` 只移动指针，`mouse_click` 强制移动并真实单击；两者都用 `locator` 指定落点，可用 `window_point`、`screen_point`、UIA 或 image 定位器。它们由 `winauto-cli run` 执行，落点被其他窗口遮挡时拒绝操作；`mouse_click` 不走 UIA Invoke。
 - `fallback` 只在 `ElementNotFound` 时进入下一个定位器；`ElementAmbiguous` 直接失败。fallback 不能嵌套。

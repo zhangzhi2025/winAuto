@@ -2,7 +2,7 @@
 
 #include <windows.h>
 
-#include <opencv2/imgproc.hpp>
+#include <algorithm>
 
 #include "WindowGrab.h"
 
@@ -34,10 +34,6 @@ Result<OcrRecognition> Win32OcrProvider::recognize(const OcrRequest& request, co
 
     const int width = capture.value.w;
     const int height = capture.value.h;
-    cv::Mat bgra(height, width, CV_8UC4, capture.value.bgra.data());
-    cv::Mat image;
-    cv::cvtColor(bgra, image, cv::COLOR_BGRA2BGR);
-
     Rect region{0, 0, width, height};
     if (request.searchRegion) {
         region = *request.searchRegion;
@@ -45,10 +41,22 @@ Result<OcrRecognition> Win32OcrProvider::recognize(const OcrRequest& request, co
             region.x > width - region.w || region.y > height - region.h) {
             return R::failure(ErrCode::InvalidWorkflow, "OCR searchRegion is outside the window client area");
         }
-        image = image(cv::Rect(region.x, region.y, region.w, region.h));
     }
 
-    Result<std::vector<OcrRuntimeText>> recognized = runtime->recognize(image);
+    Bitmap image;
+    image.w = region.w;
+    image.h = region.h;
+    image.bgra.resize(static_cast<size_t>(region.w) * static_cast<size_t>(region.h) * 4);
+    for (int y = 0; y < region.h; ++y) {
+        const size_t sourceOffset =
+            (static_cast<size_t>(region.y + y) * static_cast<size_t>(width) +
+             static_cast<size_t>(region.x)) * 4;
+        const size_t destinationOffset = static_cast<size_t>(y) * static_cast<size_t>(region.w) * 4;
+        std::copy_n(capture.value.bgra.data() + sourceOffset,
+                    static_cast<size_t>(region.w) * 4, image.bgra.data() + destinationOffset);
+    }
+
+    Result<std::string> recognized = runtime->recognize(image);
     if (!recognized.ok()) return failAs<OcrRecognition>(recognized);
     if (token.isCancelled()) return R::failure(ErrCode::Cancelled, "OCR request cancelled");
 
@@ -63,15 +71,8 @@ Result<OcrRecognition> Win32OcrProvider::recognize(const OcrRequest& request, co
     result.clientBounds = Rect{static_cast<int>(origin.x), static_cast<int>(origin.y),
                                static_cast<int>(client.right - client.left),
                                static_cast<int>(client.bottom - client.top)};
-    result.candidates.reserve(recognized.value.size());
-    size_t order = 0;
-    for (const OcrRuntimeText& text : recognized.value) {
-        Rect bounds{text.bounds.x + region.x, text.bounds.y + region.y, text.bounds.w, text.bounds.h};
-        result.candidates.push_back(OcrTextCandidate{
-            text.text, bounds,
-            Rect{result.clientBounds.x + bounds.x, result.clientBounds.y + bounds.y, bounds.w, bounds.h},
-            text.recognitionConfidence, text.detectionConfidence, order++});
-    }
+    result.recognizedText = std::move(recognized.value);
+    result.hasRegionData = false;
     return R::success(std::move(result));
 }
 

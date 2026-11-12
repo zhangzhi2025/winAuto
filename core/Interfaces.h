@@ -69,6 +69,8 @@ struct OcrTextCandidate {
 
 struct OcrRecognition {
     Rect clientBounds;
+    std::string recognizedText;
+    bool hasRegionData = true;
     std::vector<OcrTextCandidate> candidates;
 };
 

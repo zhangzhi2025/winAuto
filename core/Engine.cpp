@@ -223,7 +223,7 @@ struct WorkflowEngine::Run {
                                                "OCR matched " + std::to_string(matches.size()) + " text regions");
         }
         if (matches.size() > 1) {
-            ;//log(LogLevel::Warning, "", "OCR ambiguity=first selected the top-most matching text region");
+            log(LogLevel::Warn, "", "OCR ambiguity=first selected the top-most matching text region");
         }
         ElementRef element;
         element.bounds = matches.front().screenBounds;
@@ -247,6 +247,7 @@ struct WorkflowEngine::Run {
                 if (r.code == ErrCode::ElementNotFound) {
                     sawNotFound = true;
                 } else if (r.code == ErrCode::Unsupported) {
+                    if (std::holds_alternative<OcrLocator>(item)) return r;
                     if (unsupportedDetail.empty()) unsupportedDetail = r.detail;
                 } else {
                     return r;
@@ -506,6 +507,22 @@ struct WorkflowEngine::Run {
                 ocrRequest, scriptCancellation ? *scriptCancellation : token);
             if (!recognized.ok()) return Result<ScriptHostResponse>::failure(recognized.code, recognized.detail);
             const std::string* keyword = stringArg("keyword");
+            std::string recognizedText = recognized.value.recognizedText;
+            if (keyword && !recognized.value.hasRegionData) {
+                std::string filtered;
+                size_t start = 0;
+                while (start < recognizedText.size()) {
+                    size_t end = recognizedText.find('\n', start);
+                    if (end == std::string::npos) end = recognizedText.size();
+                    const std::string line = recognizedText.substr(start, end - start);
+                    if (line.compare(0, keyword->size(), *keyword) == 0) {
+                        if (!filtered.empty()) filtered.push_back('\n');
+                        filtered += line;
+                    }
+                    start = end + 1;
+                }
+                recognizedText = std::move(filtered);
+            }
             json blocks = json::array();
             for (const auto& candidate : recognized.value.candidates) {
                 if (keyword && (candidate.text.size() < keyword->size() ||
@@ -522,7 +539,7 @@ struct WorkflowEngine::Run {
                                   {"recognition_confidence", candidate.recognitionConfidence},
                                   {"detection_confidence", candidate.detectionConfidence}});
             }
-            json response = {{"text", recognized.value.recognizedText}, {"candidates", std::move(blocks)}};
+            json response = {{"text", std::move(recognizedText)}, {"candidates", std::move(blocks)}};
             if (response.dump().size() > kMaxWorkflowDataBytes) {
                 return Result<ScriptHostResponse>::failure(ErrCode::LimitExceeded, "OCR host result too large");
             }

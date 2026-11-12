@@ -217,7 +217,7 @@ local automation = {
     hotkey = function(window, keys) return call("input.hotkey", { window = window, keys = keys }) end,
     ocr = function(window, keyword, search_region)
         return call("ocr.recognize", { window = window, keyword = keyword,
-                                      searchRegion = search_region }).candidates
+                                      searchRegion = search_region })
     end
 }
 

@@ -2,7 +2,7 @@
 
 ## Native dependency prerequisites
 
-The OCR adapter requires the RapidOcrOnnx source plus matching architecture/CRT builds of OpenCV and ONNX Runtime. The model assets in `third_party/RapidOcrOnnx/models` are:
+The current adapter uses the downloaded Win32 CLIB package at `third_party/rapidocr/win-CLIB-CPU-Win32`; it links `lib/RapidOcrOnnx.lib` and deploys `bin/RapidOcrOnnx.dll`. It calls the package's `include/OcrLiteCApi.h` API directly, so a separate OpenCV or ONNX Runtime development package is not required. The model assets in `third_party/rapidocr/models` are:
 
 - `ch_PP-OCRv3_det_infer.onnx`
 - `ch_ppocr_mobile_v2.0_cls_train.onnx`
@@ -12,13 +12,18 @@ The OCR adapter requires the RapidOcrOnnx source plus matching architecture/CRT 
 
 Confirm the character dictionary is compatible with the selected recognition model. Configure native library and DLL deployment using the RapidOcrOnnx build guidance. OCR configuration must fail with a clear message if required native dependencies are missing; it must not affect core-only builds.
 
-OCR is opt-in until matching MSVC OpenCV and ONNX Runtime packages are installed:
+With Qt 5.15.19 for MSVC 2019 and Visual Studio 2019, configure the Win32 build with OCR enabled:
 
 ```bat
-cmake -S . -B build -G "Visual Studio 16 2019" -A x64 -DWINAUTO_ENABLE_OCR=ON
+cmake -S . -B build -G "Visual Studio 16 2019" -A Win32 ^
+  -DCMAKE_PREFIX_PATH=D:/Qt/qt5.15.19/msvc2019 ^
+  -DWINAUTO_ENABLE_OCR=ON -DWINAUTO_WERROR=ON
+cmake --build build --config Debug
 ```
 
-The current checkout includes the RapidOcrOnnx source and model assets but does not include the Windows-x64 dependency packages. A configure attempt with OCR enabled therefore stops with an explicit missing-package diagnostic. The normal configure without `WINAUTO_ENABLE_OCR` continues to build non-OCR workflows.
+OCR is opt-in (`WINAUTO_ENABLE_OCR=OFF` by default) and this downloaded package supports Win32 only. CMake checks the DLL, import library, header and model files, then deploys the DLL, models, and a verification image beside the executable.
+
+**CLIB limitation:** `OcrLiteCApi.h` returns concatenated recognized text only; it does not expose per-text boxes or confidence scores. Script OCR returns `{text, candidates: []}` and supports line-prefix keyword filtering. Workflow OCR locator/click and direction filtering are deliberately rejected as `Unsupported` with an explanation rather than inventing coordinates. The C API also conflates “no text recognized” and `OcrDetect` failure in its boolean return, so those two outcomes cannot be distinguished. A DLL exposing `TextBlock` geometry and typed inference errors is required to fully enable workflow OCR locators.
 
 ## Build and tests
 
@@ -32,14 +37,11 @@ OCR core tests use a fake provider and do not require ONNX files. Run the RapidO
 
 ## Configure and validate
 
-1. Open OCR settings and confirm the detector, classifier, recognizer and key dictionary point to readable files. Select the intended language recognizer.
-2. Run the OCR test on a known image. Readiness requires successful inference and text-box output, not merely existing files.
-3. Use OCR preview on a chosen target window. Confirm the preview is read-only and displays recognized text, boxes and confidence without issuing input.
-4. Add an OCR locator to an existing supported workflow step. Validate zero, one and duplicate matches; use the optional eight-way direction filter relative to the target client-area center, and confirm duplicates remaining in a sector fail unless `ambiguity: first` is explicitly selected.
-5. Add OCR to a fallback chain and verify only genuine no-match advances to the next locator; invalid configuration or inference failure stops with an explicit error.
-6. Exercise `ocr.recognize` from both Python and Lua script samples. Confirm both receive the same candidate JSON and that timeout/cancellation/error are explicit.
-7. Check that OCR coordinates are physical screen coordinates and that click operations still reject occluded or out-of-window targets.
+1. Run the UI/CLI from its build output directory so the deployed `models` directory and DLL are found.
+2. Execute `automation.ocr("main")` in Python or `automation.ocr("main")` in Lua after defining the workflow window alias; read the returned `text` field.
+3. Pass `keyword="Save"` (Python) or `"Save"` as the second Lua argument to retain recognized lines beginning with that prefix.
+4. Do not use the current CLIB adapter for OCR workflow locators: this DLL does not provide region geometry, and the engine rejects locator use rather than clicking guessed positions.
 
 ## Optional keyword filtering
 
-OCR detects and recognizes text regions as usual. An optional keyword filters the results to regions whose recognized text starts with that keyword. Workflow locators may then filter candidates by one of eight directions relative to the target window client-area center (`left`, `left_front`, `front`, `right_front`, `right`, `right_back`, `back`, `left_back`; `front` means up and `back` means down). The filters narrow the candidate set; if multiple targets remain in the selected sector, apply the existing ambiguity policy rather than silently selecting the nearest target. Direction boundaries are deterministic: angles are measured clockwise from screen-right, and a boundary belongs to the clockwise sector. No extra crop size, offset, or second recognition pass is involved.
+The portable OCR locator matcher supports confidence, keyword-prefix and eight-direction filters when a provider returns box geometry. The currently downloaded CLIB DLL exposes only flattened text, so those locator features remain unavailable with this adapter until a region-capable DLL is provided.

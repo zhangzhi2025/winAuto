@@ -134,6 +134,7 @@ TEST(script_broker_exposes_ocr_regions_with_keyword_prefix_filtering) {
     workflow.steps = {script("OCR")};
     OcrRecognition recognition;
     recognition.clientBounds = Rect{30, 40, 320, 200};
+    recognition.recognizedText = "Save document\nCancel";
     recognition.candidates = {
         OcrTextCandidate{"Save document", Rect{5, 6, 70, 18}, Rect{35, 46, 70, 18}, 0.96, 0.9, 0},
         OcrTextCandidate{"Cancel", Rect{90, 6, 42, 18}, Rect{120, 46, 42, 18}, 0.98, 0.9, 1}};
@@ -147,7 +148,8 @@ TEST(script_broker_exposes_ocr_regions_with_keyword_prefix_filtering) {
                  {"searchRegion", {{"x", 1}, {"y", 2}, {"width", 100}, {"height", 50}}}}.dump()});
         if (!response.ok()) return Result<ScriptResult>::failure(response.code, response.detail);
         const json result = json::parse(response.value.resultJson);
-        if (result["candidates"].size() != 1 || result["candidates"][0]["text"] != "Save document" ||
+        if (result["text"] != "Save document\nCancel" ||
+            result["candidates"].size() != 1 || result["candidates"][0]["text"] != "Save document" ||
             result["candidates"][0]["screen_bounds"]["x"] != 35) {
             return Result<ScriptResult>::failure(ErrCode::Internal, "unexpected OCR host response");
         }

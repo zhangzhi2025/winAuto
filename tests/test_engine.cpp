@@ -162,6 +162,24 @@ TEST(ocr_fallback_advances_only_on_no_match_and_stops_on_provider_errors) {
         CHECK(report.code == ErrCode::ElementAmbiguous);
         CHECK(env.locator.calls.empty());
     }
+    {
+        Env env;
+        OcrRecognition textOnly;
+        textOnly.recognizedText = "Continue";
+        textOnly.hasRegionData = false;
+        env.ocr.handler = [textOnly](const OcrRequest&, const CancelToken&) {
+            return Result<OcrRecognition>::success(textOnly);
+        };
+        OcrLocator ocr;
+        ocr.text = "Continue";
+        FallbackLocator fallback;
+        fallback.items = {LeafLocator{ocr}, LeafLocator{uia("fallback")}};
+        Step target = step("OCR-NO-GEOMETRY", StepType::Click);
+        target.locator = Locator{fallback};
+        const RunReport report = env.run(flow({target}));
+        CHECK(report.code == ErrCode::Unsupported);
+        CHECK(env.locator.calls.empty());
+    }
 }
 
 TEST(launch_program_binds_the_unique_window_from_its_process) {

@@ -302,7 +302,7 @@ TEST(ocr_locator_rejects_invalid_utf8_without_echoing_query) {
     step.locator = Locator{locator};
     const auto report = check(withStep(step));
     CHECK(report.has("invalid_utf8"));
-    const Issue* issue = report.find("invalid_utf8", "steps[0].locator.text");
+    const Issue* issue = report.find("invalid_utf8");
     CHECK(issue != nullptr);
     if (issue) CHECK_NOT_CONTAINS(issue->message, locator.text);
 }

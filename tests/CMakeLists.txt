@@ -28,6 +28,21 @@ foreach(src ${WINAUTO_TEST_SOURCES})
     add_test(NAME ${name} COMMAND ${name})
 endforeach()
 
+if(WINAUTO_ENABLE_OCR AND WIN32)
+    add_executable(test_ocr_runtime test_ocr_runtime.cpp testing_main.cpp)
+    target_link_libraries(test_ocr_runtime PRIVATE winauto_platform)
+    target_include_directories(test_ocr_runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(test_ocr_runtime PRIVATE
+        WINAUTO_OCR_MODEL_DIR="${CMAKE_BINARY_DIR}/models")
+    add_custom_command(TARGET test_ocr_runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/third_party/rapidocr/win-CLIB-CPU-Win32/bin/RapidOcrOnnx.dll"
+                "$<TARGET_FILE_DIR:test_ocr_runtime>"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_BINARY_DIR}/models" "$<TARGET_FILE_DIR:test_ocr_runtime>/models")
+    add_test(NAME test_ocr_runtime COMMAND test_ocr_runtime)
+endif()
+
 if(Qt5_FOUND)
     add_executable(test_workflow_generation
         test_workflow_generation.cpp

@@ -6,38 +6,28 @@
 #include <vector>
 
 #include "core/Interfaces.h"
-
-namespace cv {
-class Mat;
-}
-
-class OcrLite;
+#include "platform_win/ScreenCapture.h"
 
 namespace wa::platform {
-
-struct OcrRuntimeText {
-    std::string text;
-    Rect bounds;
-    double recognitionConfidence = 0.0;
-    double detectionConfidence = 0.0;
-};
 
 struct OcrModelPaths {
     std::string detector;
     std::string classifier;
     std::string recognizer;
     std::string dictionary;
+    std::string verificationImage;
     int threads = 2;
 };
 
 class OcrRuntime {
 public:
     static Result<std::shared_ptr<OcrRuntime>> create(const OcrModelPaths& paths);
-    Result<std::vector<OcrRuntimeText>> recognize(const cv::Mat& image);
+    ~OcrRuntime();
+    Result<std::string> recognize(const Bitmap& image);
 
 private:
-    explicit OcrRuntime(std::unique_ptr<OcrLite> model);
-    std::unique_ptr<OcrLite> model_;
+    explicit OcrRuntime(void* handle);
+    void* handle_ = nullptr;
     std::mutex mutex_;
 };
 

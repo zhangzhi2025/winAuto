@@ -106,7 +106,7 @@ class Automation:
             arguments["keyword"] = keyword
         if search_region is not None:
             arguments["searchRegion"] = search_region
-        return call("ocr.recognize", arguments).get("candidates", [])
+        return call("ocr.recognize", arguments)
 
 
 def main():

@@ -16,7 +16,7 @@ On success, return an object containing an ordered `candidates` array. Each cand
 - `image_bounds` and `screen_bounds` rectangles with integer physical-pixel coordinates;
 - `recognition_confidence` and `detection_confidence` values.
 
-Both script languages expose this as `automation.ocr(window, keyword=None, search_region=None)` in Python and `automation.ocr(window, keyword, search_region)` in Lua. The method returns the candidate array. Scripts may use the result in memory; normal logs must not include the recognized text.
+Both script languages expose this as `automation.ocr(window, keyword=None, search_region=None)` in Python and `automation.ocr(window, keyword, search_region)` in Lua. The method returns an object with `text` and `candidates`. Scripts may use the result in memory; normal logs must not include the recognized text.
 
 ## Failure and limits
 

@@ -8,7 +8,7 @@ set(CMAKE_CXX_COMPILER_WORKS 1)
 
 option(WINAUTO_BUILD_TESTS "Build unit tests" ON)
 option(WINAUTO_WERROR "Treat warnings as errors" OFF)
-option(WINAUTO_ENABLE_OCR "Build the Windows RapidOcrOnnx OCR adapter" OFF)
+option(WINAUTO_ENABLE_OCR "Build the Windows RapidOcrOnnx OCR adapter" ON)
 if(WINAUTO_ENABLE_OCR AND NOT WIN32)
     message(FATAL_ERROR "WINAUTO_ENABLE_OCR is supported only on Windows.")
 endif()

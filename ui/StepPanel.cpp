@@ -583,14 +583,17 @@ bool StepPanel::collect(wa::Step& out) {
         out.expect.reset();
         out.retry.reset();
     } else if (expectOn_->isChecked() && t != StepType::Wait) {
-        auto r = wa::readLocatorJson(stdStr(expect_->toPlainText().trimmed()));
-        if (!r.ok()) {
-            showStatus(QStringLiteral("expect 定位器 JSON 有误：") + qs(r.detail), true);
-            return false;
+        if( !expect_->toPlainText().trimmed().isEmpty())
+        {
+            auto r = wa::readLocatorJson(stdStr(expect_->toPlainText().trimmed()));
+            if (!r.ok()) {
+                showStatus(QStringLiteral("expect 定位器 JSON 有误：") + qs(r.detail), true);
+                return false;
+            }
+            wa::Expect e = step_.expect.value_or(wa::Expect());
+            e.locator = r.value;
+            out.expect = e;
         }
-        wa::Expect e = step_.expect.value_or(wa::Expect());
-        e.locator = r.value;
-        out.expect = e;
     } else {
         out.expect.reset();
     }

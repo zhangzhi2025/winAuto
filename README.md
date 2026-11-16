@@ -57,7 +57,10 @@ winauto-cli stop-hotkey-test [ctrl+alt+f10] :: 验证全局停止热键
 ```bat
 winauto-cli run examples\notepad-coordinates-demo.json
 winauto-cli run flow.json --yes --confirm-risks --hotkey ctrl+alt+f9
+winauto-cli run flow.json --log-file logs\run.log
 ```
+
+`run` 命令可用 `--log-file <文件>` 将屏幕上的标准输出和错误信息以 UTF-8 追加写入日志文件；日志写入失败会在屏幕提示。日志路径不能指向流程文件。
 
 鼠标脚本示例见 `examples\mouse-demo.json`；`mouse_move` 与 `mouse_click` 步骤需要指定窗口别名和定位器，可通过 `winauto-cli validate` 校验、`winauto-cli run` 执行。
 
@@ -157,7 +160,7 @@ third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
 - 不可用时（COM 初始化失败等）uia 策略返回 `Unsupported`，fallback 链会跳过它。
 
 ## 图形界面约定（阶段 4）
-- `winauto-ui [流程.json]`。左侧步骤列表（红 = 有错误，黄 = 有警告，悬停看原因），右侧属性面板，底部运行日志。
+- `winauto-ui [--log-file <日志文件>] [流程.json]`。左侧步骤列表（红 = 有错误，黄 = 有警告，悬停看原因），右侧属性面板，底部运行日志。指定 `--log-file` 后，界面显示的运行日志也会以 UTF-8 追加写入文件，并带日期时间。
 - 编辑规则全在 core 的 `WorkflowEditor`（有单元测试）：步骤 id 唯一；窗口别名重命名会同步所有引用；仍被引用的别名不能删除；全部操作可撤销/重做。
 - 定位器在面板里以 JSON 编辑（支持 fallback），也可点"拾取控件…"：读取控件树 → 选中或"鼠标拾取" → 自动生成最稳的定位器；JSON 有误时不会提交半成品。
 - 运行前一定弹出**信任摘要**（目标程序、将输入的文本、将按的键；敏感文本不显示），默认按钮是"取消"；高风险操作还需输入 `RISK`。

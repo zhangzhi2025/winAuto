@@ -316,10 +316,28 @@ void MainWindow::updateActions() {
 }
 
 void MainWindow::appendLog(const QString& line) {
-    log_->appendPlainText(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss ")) + line);
+    const QString timestamped =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss ")) + line;
+    log_->appendPlainText(timestamped);
+    if (logFile_.isOpen()) {
+        const QByteArray record = timestamped.toUtf8() + '\n';
+        if (logFile_.write(record) != record.size() || !logFile_.flush()) {
+            const QString error = logFile_.errorString();
+            logFile_.close();
+            QMessageBox::critical(this, QStringLiteral("日志文件写入失败"),
+                                  QStringLiteral("后续日志仍会显示在界面，但不会再写入文件。\n%1").arg(error));
+        }
+    }
 }
 
 // ------------------------------------------------------------------ 文件
+
+bool MainWindow::openLogFile(const QString& path, QString* error) {
+    logFile_.setFileName(path);
+    if (logFile_.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) return true;
+    if (error) *error = logFile_.errorString();
+    return false;
+}
 
 bool MainWindow::maybeSave() {
     if (!editor_.dirty()) return true;

@@ -4,7 +4,7 @@
 //   find <process> [title]         按流程里同样的规则查找唯一窗口（仅 Windows）
 //   activate <process> [title]     查找并激活窗口，拒绝提权目标（仅 Windows）
 //   stop-hotkey-test [hotkey]      验证全局停止热键能否注册并被触发（仅 Windows）
-//   run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>]
+//   run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>] [--log-file <file>]
 //                                  执行流程（仅 Windows）。流程里开了 screenshotOnFailure 时，失败截图默认存到
 //                                  <流程目录>/screenshots/<时间戳>/，--screenshot-dir 可改位置
 //
@@ -15,7 +15,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <vector>
 
@@ -54,6 +57,90 @@
 
 namespace {
 
+class TeeStreamBuf final : public std::streambuf {
+public:
+    TeeStreamBuf(std::streambuf* screen, std::ofstream& file, std::mutex& mutex, bool& failed)
+        : screen_(screen), file_(file), mutex_(mutex), failed_(failed) {}
+
+    bool failed() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return failed_;
+    }
+
+protected:
+    int_type overflow(int_type ch) override {
+        if (traits_type::eq_int_type(ch, traits_type::eof())) return traits_type::not_eof(ch);
+        const char value = traits_type::to_char_type(ch);
+        return xsputn(&value, 1) == 1 ? ch : traits_type::eof();
+    }
+
+    std::streamsize xsputn(const char* data, std::streamsize size) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const std::streamsize screenSize = screen_->sputn(data, size);
+        file_.write(data, size);
+        if (!file_) failed_ = true;
+        return screenSize;
+    }
+
+    int sync() override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const int screenResult = screen_->pubsync();
+        file_.flush();
+        if (!file_) failed_ = true;
+        return screenResult;
+    }
+
+private:
+    std::streambuf* screen_;
+    std::ofstream& file_;
+    std::mutex& mutex_;
+    bool& failed_;
+};
+
+class TeeLog {
+public:
+    explicit TeeLog(const std::string& path)
+        : file_(std::filesystem::u8path(path), std::ios::out | std::ios::app | std::ios::binary),
+          outBuffer_(std::cout.rdbuf(), file_, mutex_, failed_),
+          errBuffer_(std::cerr.rdbuf(), file_, mutex_, failed_) {
+        if (!file_) return;
+        oldOut_ = std::cout.rdbuf(&outBuffer_);
+        oldErr_ = std::cerr.rdbuf(&errBuffer_);
+        active_ = true;
+    }
+
+    ~TeeLog() { close(); }
+
+    bool opened() const { return file_.is_open(); }
+
+private:
+    void close() {
+        if (!active_) return;
+        std::cout.flush();
+        std::cerr.flush();
+        std::cout.rdbuf(oldOut_);
+        std::cerr.rdbuf(oldErr_);
+        file_.flush();
+        const bool failed = outBuffer_.failed() || errBuffer_.failed() || !file_;
+        file_.close();
+        active_ = false;
+        if (failed) {
+            constexpr char message[] = "winauto-cli: failed to write the log file\n";
+            oldErr_->sputn(message, static_cast<std::streamsize>(sizeof(message) - 1));
+            oldErr_->pubsync();
+        }
+    }
+
+    std::ofstream file_;
+    std::mutex mutex_;
+    bool failed_ = false;
+    TeeStreamBuf outBuffer_;
+    TeeStreamBuf errBuffer_;
+    std::streambuf* oldOut_ = nullptr;
+    std::streambuf* oldErr_ = nullptr;
+    bool active_ = false;
+};
+
 // Windows 的 argv 是 ANSI 代码页，中文参数会乱码；这里改用宽字符命令行并转成 UTF-8。
 std::vector<std::string> utf8Args(int argc, char** argv) {
     std::vector<std::string> args;
@@ -90,7 +177,7 @@ int usage() {
                  "                                                            save a template image (region is relative to the window client area)\n"
                  "  winauto-cli find-image <process> [titleContains] <template.png> [--min 0.9] [--region x,y,w,h] [--first]\n"
                  "  winauto-cli stop-hotkey-test [hotkey]\n"
-                 "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>]\n"
+                 "  winauto-cli run <flow.json> [--yes] [--confirm-risks] [--hotkey CTRL+ALT+F10] [--screenshot-dir <dir>] [--log-file <file>]\n"
 #endif
                  ;
     return 2;
@@ -504,6 +591,7 @@ bool askYes(const std::string& question, const char* expected) {
 
 int cmdRun(const std::vector<std::string>& args) {
     std::string path;
+    std::string logFilePath;
     bool yes = false;
     bool confirmRisks = false;
     std::string hotkeyText = wa::kDefaultStopHotkey;
@@ -511,6 +599,10 @@ int cmdRun(const std::vector<std::string>& args) {
     for (size_t i = 2; i < args.size(); ++i) {
         if (args[i] == "--yes") yes = true;
         else if (args[i] == "--screenshot-dir" && i + 1 < args.size()) screenshotDir = args[++i];
+        else if (args[i] == "--log-file" && i + 1 < args.size() && !args[i + 1].empty()) {
+            if (!logFilePath.empty()) return usage();
+            logFilePath = args[++i];
+        }
         else if (args[i] == "--confirm-risks") confirmRisks = true;
         else if (args[i] == "--hotkey" && i + 1 < args.size()) hotkeyText = args[++i];
         else if (!args[i].empty() && args[i][0] == '-') return usage();
@@ -518,6 +610,27 @@ int cmdRun(const std::vector<std::string>& args) {
         else return usage();
     }
     if (path.empty()) return usage();
+
+    if (!logFilePath.empty()) {
+        std::error_code error;
+        const auto workflowPath = std::filesystem::absolute(std::filesystem::u8path(path), error);
+        const auto logPath = std::filesystem::absolute(std::filesystem::u8path(logFilePath), error);
+        if (!error && std::filesystem::exists(workflowPath, error) && !error &&
+            std::filesystem::exists(logPath, error) && !error &&
+            std::filesystem::equivalent(workflowPath, logPath, error) && !error) {
+            std::cerr << "--log-file cannot refer to the workflow file\n";
+            return 2;
+        }
+    }
+
+    std::unique_ptr<TeeLog> log;
+    if (!logFilePath.empty()) {
+        log = std::make_unique<TeeLog>(logFilePath);
+        if (!log->opened()) {
+            std::cerr << "cannot open log file \"" << logFilePath << "\"\n";
+            return 1;
+        }
+    }
 
     std::string text;
     if (!readAll(path, &text)) {

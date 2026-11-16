@@ -1,6 +1,7 @@
 #pragma once
 // 主窗口：步骤列表 + 属性面板 + 运行/调试 + 日志。
 // 所有编辑规则都在 core 的 WorkflowEditor 里；本类只做界面转发和显示。
+#include <QFile>
 #include <QMainWindow>
 #include <map>
 #include <string>
@@ -20,6 +21,7 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent = nullptr);
     bool openFile(const QString& path);
+    bool openLogFile(const QString& path, QString* error);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -84,6 +86,7 @@ private:
 
     wa::WorkflowEditor editor_;
     QString filePath_;
+    QFile logFile_;
 
     QListWidget* list_ = nullptr;
     StepPanel* panel_ = nullptr;

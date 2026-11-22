@@ -67,6 +67,24 @@ winauto-cli run flow.json --log-file logs\run.log
 `run` 的流程：校验 → 展示**信任摘要**（目标程序、将输入的文本、将按的键；敏感文本不显示）→ 要求输入 `yes` 确认
 （含高风险操作时还要输入 `RISK`）→ 注册紧急停止热键（**注册失败则拒绝运行**）→ 执行 → 汇总结果。
 
+### 跨步骤传递控件值
+
+`get_value` 使用 UI Automation `ValuePattern` 读取控件的当前值，并把它保存在本次运行的数据中；后续 `set_value` 或 `input_text` 可用 `valueFrom` 引用该变量：
+
+```json
+{"id":"READ","type":"get_value","window":"main",
+ "locator":{"strategy":"uia","automationId":"account-number"},
+ "variable":"accountNumber","sensitive":true}
+```
+
+```json
+{"id":"WRITE","type":"set_value","window":"main",
+ "locator":{"strategy":"uia","automationId":"account-number-copy"},
+ "valueFrom":{"variable":"accountNumber"},"sensitive":true}
+```
+
+变量只在当前运行期间存在，也可通过 Python/Lua 的 `data.get`、`data.set` 共享。Python/Lua 还可调用 `automation.get_value(window, locator)`；原有 `automation.read` 仍只返回控件元信息。控件不支持 `ValuePattern`、变量缺失或变量不是字符串时会明确失败。将读取步骤标记为 `sensitive` 可启用日志脱敏并停止后续失败截图；敏感变量不能通过剪贴板输入。完整示例见 `examples/value-transfer-demo.json`，Windows 验证步骤见 `tests/manual/value-transfer-checklist.md`。
+
 退出码：0 成功；1 失败（校验未通过、执行失败、被拒绝）；2 用法错误；3 当前平台不支持；4 被用户取消。
 
 ## 目录结构

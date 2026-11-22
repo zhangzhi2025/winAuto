@@ -124,6 +124,8 @@ Step WorkflowEditor::defaultStep(StepType type, const std::string& id, const std
         case StepType::SetValue:
             s.text = "";
             break;
+        case StepType::GetValue:
+            break;
         case StepType::If:
         case StepType::While: {
             // 条件的定位器留空（uia 且没有任何条件）：校验器会提示"需要拾取控件"，不会悄悄用一个猜出来的值

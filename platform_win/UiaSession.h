@@ -29,6 +29,7 @@ public:
     Result<UiaSnapshot> snapshot(std::uint64_t windowHandle, const CancelToken& token, int maxNodes = 5000);
 
     Status invoke(std::uint64_t nativeHandle);
+    Result<std::string> getValue(std::uint64_t nativeHandle);
     Status setValue(std::uint64_t nativeHandle, const std::string& utf8Text);
 
     // 屏幕坐标处的元素在最近一次快照中的下标；不在快照里（如不属于控件视图）返回 ElementNotFound

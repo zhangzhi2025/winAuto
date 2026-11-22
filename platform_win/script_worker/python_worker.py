@@ -79,6 +79,10 @@ class Automation:
         return call("element.read", {"window": window, "locator": locator})
 
     @staticmethod
+    def get_value(window, locator):
+        return call("element.get_value", {"window": window, "locator": locator})
+
+    @staticmethod
     def click(window, locator):
         return call("element.click", {"window": window, "locator": locator})
 

@@ -126,6 +126,7 @@ struct FakeOcrProvider : IOcrProvider {
 struct FakeInputController : IInputController {
     std::vector<std::string> actions;
     std::function<Status(const std::string& action)> hook;  // 返回失败则模拟该动作失败
+    Result<std::string> valueResult = Result<std::string>::success("captured-value");
 
     std::vector<std::string>* trace = nullptr;  // 可选：同时写入共享时间线
     Status record(const std::string& a) {
@@ -142,6 +143,11 @@ struct FakeInputController : IInputController {
         return record("move:" + std::to_string(p.x) + "," + std::to_string(p.y));
     }
     Status invoke(const ElementRef& e) override { return record("invoke:" + e.name); }
+    Result<std::string> getValue(const ElementRef& e) override {
+        actions.push_back("getValue:" + e.name);
+        if (valueResult.ok()) return Result<std::string>::success(valueResult.value);
+        return Result<std::string>::failure(valueResult.code, valueResult.detail);
+    }
     Status setValue(const ElementRef& e, const std::string& text) override {
         return record("setValue:" + e.name + ":" + text);
     }

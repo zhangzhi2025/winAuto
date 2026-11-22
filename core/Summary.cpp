@@ -97,6 +97,10 @@ void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int i
             case StepType::MouseClick:
                 os << "鼠标单击 " << (s.locator ? describeLocator(*s.locator) : "?");
                 break;
+            case StepType::GetValue:
+                os << "读取控件值 -> 变量 " << s.variable.value_or("");
+                if (s.sensitive) os << " [敏感]";
+                break;
             case StepType::SetValue:
             case StepType::InputText: {
                 os << (s.type == StepType::SetValue ? "设置值 " : "输入文本 ");
@@ -104,6 +108,7 @@ void describeSteps(std::ostringstream& os, const std::vector<Step>& steps, int i
                     os << "（通过剪贴板，会暂时覆盖剪贴板，输入后还原）";
                 }
                 if (s.textFromPrompt) os << "[运行时询问，不显示]";
+                else if (s.valueFrom) os << "[来自运行变量 " << *s.valueFrom << "]";
                 else if (s.sensitive) os << "[已隐藏]";
                 else os << "\"" << truncateUtf8(s.text.value_or(""), 40) << "\"";
                 if (s.type == StepType::SetValue && s.locator) os << " -> " << describeLocator(*s.locator);

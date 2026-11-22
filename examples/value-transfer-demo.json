@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "id": "WF-VALUE-TRANSFER",
+  "name": "Read a value and transfer it",
+  "windows": {
+    "main": {
+      "processName": "sample-app.exe"
+    }
+  },
+  "steps": [
+    {
+      "id": "READ_ACCOUNT",
+      "type": "get_value",
+      "window": "main",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "account-number"
+      },
+      "variable": "accountNumber",
+      "sensitive": true
+    },
+    {
+      "id": "WRITE_ACCOUNT",
+      "type": "set_value",
+      "window": "main",
+      "locator": {
+        "strategy": "uia",
+        "automationId": "account-number-copy"
+      },
+      "valueFrom": {
+        "variable": "accountNumber"
+      },
+      "sensitive": true
+    }
+  ]
+}

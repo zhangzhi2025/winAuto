@@ -67,7 +67,9 @@ private:
     QComboBox* scriptLanguage_ = nullptr;
     QPlainTextEdit* scriptCode_ = nullptr;
     QLineEdit* text_ = nullptr;
-    QCheckBox* prompt_ = nullptr;
+    QComboBox* textSource_ = nullptr;
+    QLineEdit* sourceVariable_ = nullptr;
+    QLineEdit* outputVariable_ = nullptr;
     QCheckBox* sensitive_ = nullptr;
     QComboBox* method_ = nullptr;
     QLineEdit* keys_ = nullptr;

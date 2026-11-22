@@ -88,7 +88,14 @@ void StepPanel::buildUi() {
     scriptCode_->setMinimumHeight(150);
 
     text_ = new QLineEdit(this);
-    prompt_ = new QCheckBox(QStringLiteral("运行时询问（不保存到文件）"), this);
+    textSource_ = new QComboBox(this);
+    textSource_->addItem(QStringLiteral("固定文本"), QStringLiteral("literal"));
+    textSource_->addItem(QStringLiteral("运行时询问"), QStringLiteral("prompt"));
+    textSource_->addItem(QStringLiteral("引用运行变量"), QStringLiteral("variable"));
+    sourceVariable_ = new QLineEdit(this);
+    sourceVariable_->setPlaceholderText(QStringLiteral("变量名，如 accountNumber"));
+    outputVariable_ = new QLineEdit(this);
+    outputVariable_->setPlaceholderText(QStringLiteral("变量名，如 accountNumber"));
     sensitive_ = new QCheckBox(QStringLiteral("敏感内容（日志中隐藏）"), this);
     method_ = new QComboBox(this);
     method_->addItem(QStringLiteral("Unicode 逐字输入"), QStringLiteral("unicode"));
@@ -177,8 +184,10 @@ void StepPanel::buildUi() {
     form_->addRow(QStringLiteral("每轮间隔"), interval_);
     form_->addRow(QStringLiteral("定位器"), locatorBox_);
     form_->addRow(QStringLiteral("点击方式"), clickMode_);
+    form_->addRow(QStringLiteral("值来源"), textSource_);
     form_->addRow(QStringLiteral("文本"), text_);
-    form_->addRow(QString(), prompt_);
+    form_->addRow(QStringLiteral("来源变量"), sourceVariable_);
+    form_->addRow(QStringLiteral("输出变量"), outputVariable_);
     form_->addRow(QString(), sensitive_);
     form_->addRow(QStringLiteral("输入方式"), method_);
     form_->addRow(QStringLiteral("按键"), keys_);
@@ -213,10 +222,12 @@ void StepPanel::buildUi() {
     connect(clickMode_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(scriptLanguage_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(method_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
+    connect(textSource_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(onFailure_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &StepPanel::onFormChanged);
     connect(text_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
     connect(keys_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
-    connect(prompt_, &QCheckBox::toggled, this, &StepPanel::onFormChanged);
+    connect(sourceVariable_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
+    connect(outputVariable_, &QLineEdit::editingFinished, this, &StepPanel::onFormChanged);
     connect(sensitive_, &QCheckBox::toggled, this, &StepPanel::onFormChanged);
     connect(expectOn_, &QCheckBox::toggled, this, &StepPanel::onFormChanged);
     connect(duration_, &QSpinBox::editingFinished, this, &StepPanel::onFormChanged);
@@ -377,7 +388,12 @@ void StepPanel::setStep(const wa::Step& step, const std::vector<std::string>& al
     scriptLanguage_->setCurrentIndex(step.scriptLanguage == wa::ScriptLanguage::Lua ? 1 : 0);
     scriptCode_->setPlainText(step.scriptCode ? qs(*step.scriptCode) : QString());
     text_->setText(step.text ? qs(*step.text) : QString());
-    prompt_->setChecked(step.textFromPrompt);
+    const QString sourceMode = step.valueFrom ? QStringLiteral("variable")
+                               : step.textFromPrompt ? QStringLiteral("prompt")
+                                                     : QStringLiteral("literal");
+    textSource_->setCurrentIndex(textSource_->findData(sourceMode));
+    sourceVariable_->setText(step.valueFrom ? qs(*step.valueFrom) : QString());
+    outputVariable_->setText(step.variable ? qs(*step.variable) : QString());
     sensitive_->setChecked(step.sensitive);
     method_->setCurrentIndex(step.method == wa::InputMethod::Clipboard ? 1 : 0);
     keys_->setText(joinKeys(step.keys));
@@ -424,7 +440,7 @@ void StepPanel::setRowVisible(QWidget* field, bool visible) {
 void StepPanel::updateVisibility() {
     using wa::StepType;
     const StepType t = step_.type;
-    const bool locatorStep = t == StepType::Click || t == StepType::SetValue ||
+    const bool locatorStep = t == StepType::Click || t == StepType::GetValue || t == StepType::SetValue ||
                              t == StepType::WaitForElement || t == StepType::AssertElement;
     const bool textStep = t == StepType::InputText || t == StepType::SetValue;
     const bool waits = t == StepType::Wait;
@@ -452,9 +468,11 @@ void StepPanel::updateVisibility() {
     setRowVisible(interval_, isRepeat || isWhile);
     setRowVisible(locatorBox_, locatorStep);
     setRowVisible(clickMode_, t == StepType::Click);
-    setRowVisible(text_, textStep);
-    setRowVisible(prompt_, textStep);
-    setRowVisible(sensitive_, textStep);
+    setRowVisible(text_, textStep && textSource_->currentData().toString() == QLatin1String("literal"));
+    setRowVisible(textSource_, textStep);
+    setRowVisible(sourceVariable_, textStep && textSource_->currentData().toString() == QLatin1String("variable"));
+    setRowVisible(outputVariable_, t == StepType::GetValue);
+    setRowVisible(sensitive_, textStep || t == StepType::GetValue);
     setRowVisible(method_, t == StepType::InputText);
     setRowVisible(keys_, t == StepType::Hotkey);
     setRowVisible(duration_, waits);
@@ -471,7 +489,6 @@ void StepPanel::updateVisibility() {
     setRowVisible(expectBox_, !waits && !block && !isLaunch && expectOn_->isChecked());
     setRowVisible(retryTimes_, !block && !isLaunch);
     setRowVisible(retryInterval_, !block && !isLaunch);
-    text_->setEnabled(!prompt_->isChecked());
 }
 
 void StepPanel::showStatus(const QString& text, bool error) {
@@ -486,6 +503,11 @@ bool StepPanel::collect(wa::Step& out) {
     out.window = stdStr(window_->currentData().toString());
 
     const StepType t = step_.type;
+    out.variable.reset();
+    out.valueFrom.reset();
+    out.text.reset();
+    out.textFromPrompt = false;
+    out.sensitive = false;
     if (t == StepType::Script) {
         out.window.clear();
         out.scriptLanguage = scriptLanguage_->currentData().toString() == QLatin1String("lua")
@@ -530,7 +552,7 @@ bool StepPanel::collect(wa::Step& out) {
         else out.onFailure.reset();
         return true;
     }
-    if (t == StepType::Click || t == StepType::SetValue || t == StepType::WaitForElement ||
+    if (t == StepType::Click || t == StepType::GetValue || t == StepType::SetValue || t == StepType::WaitForElement ||
         t == StepType::AssertElement) {
         const QString text = locator_->toPlainText().trimmed();
         if (text.isEmpty()) {
@@ -546,11 +568,35 @@ bool StepPanel::collect(wa::Step& out) {
     }
     out.clickMode = clickMode_->currentData().toString() == QLatin1String("point") ? wa::ClickMode::Point
                                                                                   : wa::ClickMode::Auto;
-    out.textFromPrompt = prompt_->isChecked();
-    out.sensitive = sensitive_->isChecked();
+    if (t == StepType::InputText || t == StepType::SetValue || t == StepType::GetValue) {
+        out.sensitive = sensitive_->isChecked();
+    }
+    if (t == StepType::GetValue) {
+        const QString variable = outputVariable_->text().trimmed();
+        if (variable.isEmpty()) {
+            showStatus(QStringLiteral("请输入输出变量名"), true);
+            return false;
+        }
+        out.variable = stdStr(variable);
+    }
     if (t == StepType::InputText || t == StepType::SetValue) {
-        if (out.textFromPrompt) out.text.reset();
-        else out.text = stdStr(text_->text());
+        const QString source = textSource_->currentData().toString();
+        if (source == QLatin1String("prompt")) {
+            out.textFromPrompt = true;
+        } else if (source == QLatin1String("variable")) {
+            const QString variable = sourceVariable_->text().trimmed();
+            if (variable.isEmpty()) {
+                showStatus(QStringLiteral("请输入来源变量名"), true);
+                return false;
+            }
+            out.valueFrom = stdStr(variable);
+        } else {
+            if (text_->text().isEmpty()) {
+                showStatus(QStringLiteral("请输入文本内容"), true);
+                return false;
+            }
+            out.text = stdStr(text_->text());
+        }
     }
     out.method = method_->currentData().toString() == QLatin1String("clipboard") ? wa::InputMethod::Clipboard
                                                                                  : wa::InputMethod::Unicode;
@@ -615,10 +661,10 @@ bool StepPanel::collect(wa::Step& out) {
 
 void StepPanel::onFormChanged() {
     if (loading_) return;
+    updateVisibility();
     wa::Step s;
     if (!collect(s)) return;  // 状态栏已显示原因，不提交半成品
     showStatus(QString(), false);
-    updateVisibility();
     emit stepEdited(s);
 }
 

@@ -18,6 +18,7 @@ public:
     Status clickPoint(Point screenPoint, std::uint64_t windowHandle) override;
     Status movePoint(Point screenPoint, std::uint64_t windowHandle) override;
     Status invoke(const ElementRef& element) override;
+    Result<std::string> getValue(const ElementRef& element) override;
     Status setValue(const ElementRef& element, const std::string& text) override;
     Status typeText(const std::string& text, InputMethod method) override;
     Status hotkey(const std::vector<std::string>& normalizedKeys) override;

@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <thread>
+#include <unordered_set>
 
 #include "core/Validator.h"
 #include "core/Json.h"
@@ -69,6 +70,7 @@ struct WorkflowEngine::Run {
     std::int64_t t0 = 0;
     std::map<std::string, std::uint64_t> handles;  // 窗口别名 -> 句柄
     json workflowData = json::object();
+    std::unordered_set<std::string> sensitiveVariables;
     std::chrono::steady_clock::time_point scriptDeadline{};
     std::shared_ptr<CancelToken> scriptCancellation;
 
@@ -328,6 +330,32 @@ struct WorkflowEngine::Run {
                 return click ? deps.input->clickPoint(point, handle) : deps.input->movePoint(point, handle);
             }
 
+            case StepType::GetValue: {
+                if (s.sensitive) sensitiveSeen = true;
+                Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
+                                                     ErrCode::ElementNotFound, true);
+                if (!r.ok()) return failAs<Unit>(r);
+                if (!r.value.supportsValue) {
+                    return Status::failure(ErrCode::Unsupported,
+                                           "target control does not support ValuePattern");
+                }
+                Result<std::string> value = deps.input->getValue(r.value);
+                if (!value.ok()) return Status::failure(value.code, value.detail);
+                json updated = workflowData;
+                updated[*s.variable] = value.value;
+                if (!validWorkflowData(updated) || updated.dump().size() > kMaxWorkflowDataBytes) {
+                    return Status::failure(ErrCode::LimitExceeded, "workflow data limit exceeded");
+                }
+                if (s.sensitive) {
+                    logger.addSecret(value.value);
+                    sensitiveVariables.insert(*s.variable);
+                } else {
+                    sensitiveVariables.erase(*s.variable);
+                }
+                workflowData = std::move(updated);
+                return okStatus();
+            }
+
             case StepType::SetValue: {
                 Result<ElementRef> r = locatePolling(handle, *s.locator, timeoutFor(s),
                                                      ErrCode::ElementNotFound, true);
@@ -438,6 +466,9 @@ struct WorkflowEngine::Run {
             if (scriptCancellation && scriptCancellation->isCancelled()) {
                 return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
             }
+            if (sensitiveVariables.count(*key) && value->is_string()) {
+                logger.addSecret(value->get_ref<const std::string&>());
+            }
             workflowData = std::move(updated);
             return success(json{{"ok", true}});
         }
@@ -459,6 +490,7 @@ struct WorkflowEngine::Run {
         }
 
         const bool elementOperation = request.operation == "element.read" ||
+                                      request.operation == "element.get_value" ||
                                       request.operation == "element.click" ||
                                       request.operation == "element.move" ||
                                       request.operation == "element.set_value";
@@ -629,6 +661,7 @@ struct WorkflowEngine::Run {
             return Result<ScriptHostResponse>::failure(ErrCode::Timeout, "script step deadline exceeded");
         }
         if (!found.value.enabled && request.operation != "element.read" &&
+            request.operation != "element.get_value" &&
             request.operation != "element.move") {
             return Result<ScriptHostResponse>::failure(ErrCode::InputBlocked, "target element is disabled");
         }
@@ -638,6 +671,16 @@ struct WorkflowEngine::Run {
                                 {"bounds", {{"x", found.value.bounds.x}, {"y", found.value.bounds.y},
                                             {"width", found.value.bounds.w}, {"height", found.value.bounds.h}}},
                                 {"enabled", found.value.enabled}});
+        }
+        if (request.operation == "element.get_value") {
+            if (!found.value.supportsValue) {
+                return Result<ScriptHostResponse>::failure(ErrCode::Unsupported,
+                                                           "element does not support ValuePattern");
+            }
+            Result<std::string> value = deps.input->getValue(found.value);
+            if (!value.ok()) return Result<ScriptHostResponse>::failure(value.code, value.detail);
+            logger.addSecret(value.value);
+            return success(json(value.value));
         }
         if (request.operation == "element.click") {
             if (found.value.supportsInvoke) {
@@ -991,6 +1034,7 @@ struct WorkflowEngine::Run {
 
         // 敏感文本：先登记再使用，之后所有输出都会被脱敏
         std::string text;
+        bool textIsSensitive = s.sensitive;
         if (s.type == StepType::InputText || s.type == StepType::SetValue) {
             if (s.textFromPrompt || s.sensitive) sensitiveSeen = true;  // 从这一步起不再截图
             if (s.textFromPrompt) {
@@ -1001,9 +1045,27 @@ struct WorkflowEngine::Run {
                 if (!p.ok()) return finishRec(p.code, p.detail);
                 text = p.value;
                 logger.addSecret(text);
+            } else if (s.valueFrom) {
+                const auto value = workflowData.find(*s.valueFrom);
+                if (value == workflowData.end()) {
+                    return finishRec(ErrCode::InvalidWorkflow,
+                                     "valueFrom references missing workflow variable \"" + *s.valueFrom + "\"");
+                }
+                if (!value->is_string()) {
+                    return finishRec(ErrCode::InvalidWorkflow,
+                                     "valueFrom variable \"" + *s.valueFrom + "\" is not a string");
+                }
+                text = value->get<std::string>();
+                textIsSensitive = textIsSensitive || sensitiveVariables.count(*s.valueFrom) != 0;
+                if (textIsSensitive) sensitiveSeen = true;
+                if (textIsSensitive) logger.addSecret(text);
+                if (textIsSensitive && s.type == StepType::InputText && s.method == InputMethod::Clipboard) {
+                    return finishRec(ErrCode::InputBlocked,
+                                     "sensitive variable values cannot be sent through the clipboard");
+                }
             } else {
                 text = s.text.value_or("");
-                if (s.sensitive) logger.addSecret(text);
+                if (textIsSensitive) logger.addSecret(text);
             }
         }
 

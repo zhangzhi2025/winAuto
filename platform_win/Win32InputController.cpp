@@ -109,6 +109,12 @@ Status Win32InputController::invoke(const ElementRef& element) {
     return uia_->invoke(element.nativeHandle);
 }
 
+Result<std::string> Win32InputController::getValue(const ElementRef& element) {
+    if (!uia_) return Result<std::string>::failure(ErrCode::Unsupported,
+                                                    "ValuePattern needs a UI Automation session");
+    return uia_->getValue(element.nativeHandle);
+}
+
 Status Win32InputController::setValue(const ElementRef& element, const std::string& text) {
     if (!uia_) return Status::failure(ErrCode::Unsupported, "ValuePattern needs a UI Automation session");
     return uia_->setValue(element.nativeHandle, text);

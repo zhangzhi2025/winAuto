@@ -186,6 +186,26 @@ Status UiaSession::invoke(std::uint64_t handle) {
     return Status::success();
 }
 
+Result<std::string> UiaSession::getValue(std::uint64_t handle) {
+    IUIAutomationElement* e = impl_->resolve(handle);
+    if (!e) return Result<std::string>::failure(ErrCode::ElementNotFound,
+                                                 "element reference is stale (UI tree was re-read)");
+    ComPtr<IUIAutomationValuePattern> p;
+    HRESULT hr = e->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&p));
+    if (FAILED(hr) || !p) {
+        return Result<std::string>::failure(ErrCode::Unsupported, "element has no ValuePattern");
+    }
+    BSTR value = nullptr;
+    hr = p->get_CurrentValue(&value);
+    if (FAILED(hr)) {
+        if (value) SysFreeString(value);
+        return Result<std::string>::failure(ErrCode::Internal, "ValuePattern get_CurrentValue failed: " + hrText(hr));
+    }
+    std::string utf8 = value ? toUtf8(std::wstring(value, SysStringLen(value))) : std::string();
+    if (value) SysFreeString(value);
+    return Result<std::string>::success(std::move(utf8));
+}
+
 Status UiaSession::setValue(std::uint64_t handle, const std::string& text) {
     IUIAutomationElement* e = impl_->resolve(handle);
     if (!e) return Status::failure(ErrCode::ElementNotFound, "element reference is stale (UI tree was re-read)");

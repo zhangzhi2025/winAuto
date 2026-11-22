@@ -36,7 +36,7 @@ TEST(reads_notepad_example) {
 
 TEST(examples_pass_the_validator) {
     for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json",
-                             "mouse-demo.json"}) {
+                             "mouse-demo.json", "value-transfer-demo.json"}) {
         Workflow wf = mustRead(testutil::exampleText(name));
         auto report = validateWorkflow(wf);
         CHECK(report.ok());
@@ -48,7 +48,7 @@ TEST(examples_pass_the_validator) {
 
 TEST(read_write_roundtrip_matches_original_json) {
     for (const char* name : {"notepad-demo.json", "fallback-prompt-demo.json", "notepad-coordinates-demo.json",
-                             "mouse-demo.json"}) {
+                             "mouse-demo.json", "value-transfer-demo.json"}) {
         const std::string text = testutil::exampleText(name);
         Workflow wf = mustRead(text);
         const std::string out = writeWorkflow(wf);
@@ -88,6 +88,27 @@ TEST(script_steps_and_initial_data_roundtrip) {
     CHECK(roundTrip.steps[1].scriptLanguage == ScriptLanguage::Lua);
     CHECK_EQ(*roundTrip.steps[0].scriptCode, "data.set('count', 4)");
     CHECK_EQ(*roundTrip.steps[1].scriptCode, "data.set('enabled', false)");
+}
+
+TEST(get_value_and_variable_text_sources_roundtrip) {
+    const std::string text = R"({
+      "schemaVersion":"1.0","id":"transfer","name":"Transfer",
+      "windows":{"main":{"processName":"app.exe"}},
+      "steps":[
+        {"id":"READ","type":"get_value","window":"main",
+         "locator":{"strategy":"uia","automationId":"source"},
+         "variable":"accountNumber","sensitive":true},
+        {"id":"WRITE","type":"set_value","window":"main",
+         "locator":{"strategy":"uia","automationId":"target"},
+         "valueFrom":{"variable":"accountNumber"}}
+      ]
+    })";
+    Workflow wf = mustRead(text);
+    CHECK(wf.steps[0].type == StepType::GetValue);
+    CHECK_EQ(*wf.steps[0].variable, "accountNumber");
+    CHECK(wf.steps[0].sensitive);
+    CHECK_EQ(*wf.steps[1].valueFrom, "accountNumber");
+    CHECK(json::parse(writeWorkflow(wf)) == json::parse(text));
 }
 
 TEST(launch_program_step_roundtrips_with_blank_window_binding) {

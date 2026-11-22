@@ -54,6 +54,7 @@ const char* toString(StepType t) {
         case StepType::Click: return "click";
         case StepType::MouseMove: return "mouse_move";
         case StepType::MouseClick: return "mouse_click";
+        case StepType::GetValue: return "get_value";
         case StepType::SetValue: return "set_value";
         case StepType::InputText: return "input_text";
         case StepType::Hotkey: return "hotkey";
@@ -73,6 +74,7 @@ const char* toString(StepType t) {
 StepType parseStepType(const std::string& s) {
     static const StepType all[] = {StepType::ActivateWindow, StepType::Click,
                                    StepType::MouseMove,       StepType::MouseClick,
+                                   StepType::GetValue,
                                    StepType::SetValue,       StepType::InputText,
                                    StepType::Hotkey,         StepType::Wait,
                                    StepType::WaitForElement, StepType::AssertElement,
@@ -117,7 +119,8 @@ bool requiresWindow(StepType t) {
 
 bool requiresLocator(StepType t) {
     return t == StepType::Click || t == StepType::MouseMove || t == StepType::MouseClick ||
-           t == StepType::SetValue || t == StepType::WaitForElement || t == StepType::AssertElement;
+           t == StepType::GetValue || t == StepType::SetValue ||
+           t == StepType::WaitForElement || t == StepType::AssertElement;
 }
 
 }  // namespace wa

@@ -208,6 +208,7 @@ local data = {
 local automation = {
     activate_window = function(window) return call("window.activate", { window = window }) end,
     read = function(window, locator) return call("element.read", { window = window, locator = locator }) end,
+    get_value = function(window, locator) return call("element.get_value", { window = window, locator = locator }) end,
     click = function(window, locator) return call("element.click", { window = window, locator = locator }) end,
     move = function(window, locator) return call("element.move", { window = window, locator = locator }) end,
     set_value = function(window, locator, text)

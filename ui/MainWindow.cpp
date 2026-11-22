@@ -52,6 +52,7 @@
 
 namespace {
 const wa::StepType kStepTypes[] = {wa::StepType::ActivateWindow, wa::StepType::Click,
+                                   wa::StepType::GetValue,
                                    wa::StepType::SetValue,       wa::StepType::InputText,
                                    wa::StepType::Hotkey,         wa::StepType::Wait,
                                    wa::StepType::WaitForElement, wa::StepType::AssertElement,
@@ -63,6 +64,7 @@ QString typeLabel(wa::StepType t) {
     switch (t) {
         case wa::StepType::ActivateWindow: return QStringLiteral("激活窗口");
         case wa::StepType::Click: return QStringLiteral("点击");
+        case wa::StepType::GetValue: return QStringLiteral("读取控件值");
         case wa::StepType::SetValue: return QStringLiteral("设置值");
         case wa::StepType::InputText: return QStringLiteral("输入文本");
         case wa::StepType::Hotkey: return QStringLiteral("组合键");

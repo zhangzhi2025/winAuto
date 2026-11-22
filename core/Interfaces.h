@@ -94,6 +94,7 @@ public:
     // Moves the pointer only; when windowHandle is nonzero, the point must belong to that window.
     virtual Status movePoint(Point screenPoint, std::uint64_t windowHandle) = 0;
     virtual Status invoke(const ElementRef& element) = 0;
+    virtual Result<std::string> getValue(const ElementRef& element) = 0;
     virtual Status setValue(const ElementRef& element, const std::string& text) = 0;
     virtual Status typeText(const std::string& text, InputMethod method) = 0;
     virtual Status hotkey(const std::vector<std::string>& normalizedKeys) = 0;

@@ -128,6 +128,7 @@ TEST(script_broker_dispatches_input_through_checked_host_interfaces) {
     for (const auto& entry : report.logs) CHECK_NOT_CONTAINS(entry.message, "private-value");
 }
 
+
 TEST(script_broker_exposes_ocr_regions_with_keyword_prefix_filtering) {
     Env env;
     Workflow workflow = minimalWorkflow();

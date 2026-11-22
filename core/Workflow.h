@@ -77,6 +77,7 @@ bool isFallback(const Locator& loc);
 enum class StepType {
     ActivateWindow,
     Click,
+    GetValue,
     SetValue,
     InputText,
     Hotkey,
@@ -106,8 +107,10 @@ struct Step {
     std::optional<std::string> window;  // windows 别名；wait 以外都必须提供
     std::optional<Locator> locator;
     std::optional<std::string> text;
+    std::optional<std::string> valueFrom;
     bool textFromPrompt = false;  // JSON: "textFrom": "prompt"，运行时询问，不落盘
     std::optional<bool> sensitive;
+    std::optional<std::string> variable;
     std::optional<ClickMode> clickMode;
     std::optional<InputMethod> method;
     std::vector<std::string> keys;

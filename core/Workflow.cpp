@@ -29,6 +29,7 @@ bool lookup(const Entry<E> (&table)[N], std::string_view s, E* out) {
 
 const Entry<StepType> kStepTypes[] = {
     {StepType::ActivateWindow, "activate_window"}, {StepType::Click, "click"},
+    {StepType::GetValue, "get_value"},
     {StepType::SetValue, "set_value"},             {StepType::InputText, "input_text"},
     {StepType::Hotkey, "hotkey"},                  {StepType::Wait, "wait"},
     {StepType::WaitForElement, "wait_for_element"}, {StepType::AssertElement, "assert_element"}};

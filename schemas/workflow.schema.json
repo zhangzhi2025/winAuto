@@ -90,6 +90,12 @@
       },
       "description": "JSON-compatible object; semantic validation limits serialized size to 1 MiB and nesting to 32 levels"
     },
+    "workflowVariable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
     "timeoutMs": {
       "type": "integer",
       "minimum": 1,
@@ -504,6 +510,7 @@
             "click",
             "mouse_move",
             "mouse_click",
+            "get_value",
             "set_value",
             "input_text",
             "hotkey",
@@ -549,6 +556,21 @@
         },
         "textFrom": {
           "const": "prompt"
+        },
+        "valueFrom": {
+          "type": "object",
+          "required": [
+            "variable"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "variable": {
+              "$ref": "#/definitions/workflowVariable"
+            }
+          }
+        },
+        "variable": {
+          "$ref": "#/definitions/workflowVariable"
         },
         "method": {
           "enum": [
@@ -711,6 +733,7 @@
                   "click",
                   "mouse_move",
                   "mouse_click",
+                  "get_value",
                   "set_value",
                   "wait_for_element",
                   "assert_element"
@@ -760,17 +783,28 @@
           },
           "then": {
             "oneOf": [
-              {
-                "required": [
-                  "text"
-                ]
-              },
-              {
-                "required": [
-                  "textFrom"
-                ]
-              }
+              { "required": ["text"] },
+              { "required": ["textFrom"] },
+              { "required": ["valueFrom"] }
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "get_value" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["variable"],
+            "not": {
+              "anyOf": [
+                { "required": ["text"] },
+                { "required": ["textFrom"] },
+                { "required": ["valueFrom"] }
+              ]
+            }
           }
         },
         {
@@ -909,6 +943,16 @@
                 {
                   "required": [
                     "textFrom"
+                  ]
+                },
+                {
+                  "required": [
+                    "valueFrom"
+                  ]
+                },
+                {
+                  "required": [
+                    "variable"
                   ]
                 },
                 {

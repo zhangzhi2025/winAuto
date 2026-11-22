@@ -213,7 +213,8 @@ void readLocator(const JsonValue& v, const std::string& path, Issues& is, Locato
 const std::set<std::string>& allStepFields() {
     static const std::set<std::string> k = {"id",         "type",       "description", "onFailure", "window",
                                             "locator",    "text",       "textFrom",    "sensitive", "clickMode",
-                                            "method",     "keys",       "durationMs",  "timeoutMs", "expect",
+                                            "valueFrom",  "variable",   "method",      "keys",       "durationMs",
+                                            "timeoutMs",  "expect",
                                             "retry"};
     return k;
 }
@@ -230,11 +231,14 @@ std::vector<std::string> allowedStepFields(StepType t) {
         a.push_back("locator");
         a.push_back("clickMode");
         break;
+    case StepType::GetValue:
+        for (const char* k : {"locator", "variable", "sensitive"}) a.push_back(k);
+        break;
     case StepType::SetValue:
-        for (const char* k : {"locator", "text", "textFrom", "sensitive"}) a.push_back(k);
+        for (const char* k : {"locator", "text", "textFrom", "valueFrom", "sensitive"}) a.push_back(k);
         break;
     case StepType::InputText:
-        for (const char* k : {"text", "textFrom", "sensitive", "method", "locator"}) a.push_back(k);
+        for (const char* k : {"text", "textFrom", "valueFrom", "sensitive", "method", "locator"}) a.push_back(k);
         break;
     case StepType::Hotkey: a.push_back("keys"); break;
     case StepType::WaitForElement:
@@ -281,6 +285,11 @@ void readStep(const JsonValue& v, const std::string& path, Issues& is, Step* out
         else addError(is, "E_BAD_ENUM", f.at("textFrom"), "invalid value '" + *tf + "', expected one of: prompt");
     }
     out->sensitive = f.boolean("sensitive");
+    out->variable = f.str("variable");
+    if (const JsonValue* source = f.object("valueFrom")) {
+        Fields sourceFields(*source, f.at("valueFrom"), is, {"variable"});
+        out->valueFrom = sourceFields.str("variable", true);
+    }
     out->clickMode = f.enumeration<ClickMode>("clickMode", parseClickMode, "auto, invoke, mouse");
     out->method = f.enumeration<InputMethod>("method", parseInputMethod, "unicode, clipboard, value_pattern");
     if (const JsonValue* keys = f.array("keys")) {
@@ -371,6 +380,12 @@ JsonValue writeStep(const Step& s) {
     if (s.window) o.set("window", S(*s.window));
     if (s.locator) o.set("locator", writeLocator(*s.locator));
     if (s.text) o.set("text", S(*s.text));
+    if (s.valueFrom) {
+        JsonValue source = JsonValue::makeObject();
+        source.set("variable", S(*s.valueFrom));
+        o.set("valueFrom", std::move(source));
+    }
+    if (s.variable) o.set("variable", S(*s.variable));
     if (s.textFromPrompt) o.set("textFrom", S("prompt"));
     if (s.sensitive) o.set("sensitive", JsonValue::makeBool(*s.sensitive));
     if (s.clickMode) o.set("clickMode", S(toString(*s.clickMode)));

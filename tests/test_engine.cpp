@@ -678,6 +678,78 @@ TEST(set_value_requires_value_pattern) {
     CHECK_EQ(env2.input.actions[0], "setValue:edit:abc");
 }
 
+TEST(get_value_stores_a_run_local_string_for_later_steps) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("edit", true, true); };
+    env.input.valueResult = Result<std::string>::success("account-42");
+    Step get = step("READ", StepType::GetValue);
+    get.locator = Locator{uia("source", "Edit")};
+    get.variable = "accountNumber";
+    Step set = step("WRITE", StepType::SetValue);
+    set.locator = Locator{uia("target", "Edit")};
+    set.valueFrom = "accountNumber";
+
+    const RunReport report = env.run(flow({get, set}));
+    CHECK(report.state == ExecutionState::Succeeded);
+    CHECK_EQ(env.input.actions.size(), size_t(2));
+    CHECK_EQ(env.input.actions[0], "getValue:edit");
+    CHECK_EQ(env.input.actions[1], "setValue:edit:account-42");
+}
+
+TEST(get_value_failures_and_invalid_variable_references_are_explicit) {
+    Step get = step("READ", StepType::GetValue);
+    get.locator = Locator{uia("source", "Edit")};
+    get.variable = "accountNumber";
+    Step set = step("WRITE", StepType::InputText);
+    set.valueFrom = "missing";
+
+    {
+        Env env;
+        env.locator.handler = [](const LeafLocator&, int) { return found("edit", true, false); };
+        CHECK(env.run(flow({get})).code == ErrCode::Unsupported);
+    }
+    {
+        Env env;
+        env.locator.handler = [](const LeafLocator&, int) { return found("edit", true, true); };
+        env.input.valueResult = Result<std::string>::failure(ErrCode::Internal, "provider error");
+        CHECK(env.run(flow({get})).code == ErrCode::Internal);
+    }
+    {
+        Env env;
+        CHECK(env.run(flow({set})).code == ErrCode::InvalidWorkflow);
+    }
+    {
+        Env env;
+        Workflow wf = flow({set});
+        wf.initialDataJson = R"({"missing":42})";
+        const RunReport report = env.run(wf);
+        CHECK(report.code == ErrCode::InvalidWorkflow);
+        CHECK_CONTAINS(report.detail, "not a string");
+    }
+}
+
+TEST(sensitive_captured_values_are_redacted_and_not_pasted_from_clipboard) {
+    Env env;
+    env.locator.handler = [](const LeafLocator&, int) { return found("edit", true, true); };
+    env.input.valueResult = Result<std::string>::success("private-account-value");
+    Step get = step("READ", StepType::GetValue);
+    get.locator = Locator{uia("source", "Edit")};
+    get.variable = "accountNumber";
+    get.sensitive = true;
+    Step input = step("TYPE", StepType::InputText);
+    input.valueFrom = "accountNumber";
+    input.method = InputMethod::Unicode;
+    RunReport report = env.run(flow({get, input}));
+    CHECK(report.state == ExecutionState::Succeeded);
+    CHECK_NOT_CONTAINS(everything(report), "private-account-value");
+    CHECK_EQ(env.input.actions.back(), "type:unicode:private-account-value");
+
+    input.method = InputMethod::Clipboard;
+    const RunReport clipboardReport = env.run(flow({get, input}));
+    CHECK(clipboardReport.code == ErrCode::InvalidWorkflow);
+    CHECK(clipboardReport.steps.empty());
+}
+
 TEST(observer_receives_state_and_step_events) {
     Env env;
     std::vector<ExecutionState> states;

@@ -104,6 +104,7 @@ enum class StepType {
     Click,
     MouseMove,
     MouseClick,
+    GetValue,
     SetValue,
     InputText,
     Hotkey,
@@ -157,8 +158,10 @@ struct Step {
 
     // input_text / set_value
     std::optional<std::string> text;
+    std::optional<std::string> valueFrom;  // 运行时从 workflowData 中读取字符串
     bool textFromPrompt = false;  // textFrom: "prompt"，运行时询问，不落盘
     bool sensitive = false;
+    std::optional<std::string> variable;  // get_value 输出变量
     InputMethod method = InputMethod::Unicode;
 
     // click

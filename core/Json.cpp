@@ -347,6 +347,7 @@ private:
         if (depth > kMaxNesting) throw ReadError{path, "blocks are nested too deeply (max " + std::to_string(kMaxNesting) + ")"};
         noteUnknown(v,
                     {"id", "type", "window", "locator", "text", "textFrom", "method", "sensitive",
+                     "valueFrom", "variable",
                      "mode", "keys", "durationMs", "timeoutMs", "expect", "retry", "onFailure",
                      "condition", "times", "maxIterations", "intervalMs", "then", "else", "body",
                      "language", "code", "programPath", "arguments"},
@@ -386,6 +387,26 @@ private:
             s.textFromPrompt = true;
         }
         s.sensitive = boolean(v, "sensitive", false, path);
+        if (find(v, "variable")) {
+            if (s.type == StepType::GetValue) s.variable = str(v, "variable", "", path);
+            else wf_.unknownFields.push_back(childPath(path, "variable"));
+        }
+        if (const json* valueFrom = find(v, "valueFrom")) {
+            if (s.type == StepType::SetValue || s.type == StepType::InputText) {
+                requireObject(*valueFrom, childPath(path, "valueFrom"));
+                noteUnknown(*valueFrom, {"variable"}, childPath(path, "valueFrom"));
+                const json* variable = find(*valueFrom, "variable");
+                if (!variable) {
+                    throw ReadError{childPath(childPath(path, "valueFrom"), "variable"), "missing required field"};
+                }
+                if (!variable->is_string()) {
+                    throw ReadError{childPath(childPath(path, "valueFrom"), "variable"), "must be a string"};
+                }
+                s.valueFrom = variable->get<std::string>();
+            } else {
+                wf_.unknownFields.push_back(childPath(path, "valueFrom"));
+            }
+        }
         if (find(v, "method")) {
             const std::string m = str(v, "method", "", path);
             if (m == "unicode") s.method = InputMethod::Unicode;
@@ -571,12 +592,19 @@ ojson writeStep(const Step& s) {
     if (!s.window.empty()) j["window"] = s.window;
     if (s.locator) j["locator"] = writeLocator(*s.locator);
     if (s.type == StepType::Click) j["mode"] = s.clickMode == ClickMode::Auto ? "auto" : "point";
-    if (s.text) j["text"] = *s.text;
-    if (s.textFromPrompt) j["textFrom"] = "prompt";
+    if (s.type == StepType::GetValue) {
+        if (s.variable) j["variable"] = *s.variable;
+    } else {
+        if (s.text) j["text"] = *s.text;
+        if (s.textFromPrompt) j["textFrom"] = "prompt";
+        if (s.valueFrom) j["valueFrom"] = {{"variable", *s.valueFrom}};
+    }
     if (s.type == StepType::InputText) {
         j["method"] = s.method == InputMethod::Unicode ? "unicode" : "clipboard";
     }
-    if (s.type == StepType::InputText || s.type == StepType::SetValue) j["sensitive"] = s.sensitive;
+    if (s.type == StepType::InputText || s.type == StepType::SetValue || s.type == StepType::GetValue) {
+        j["sensitive"] = s.sensitive;
+    }
     if (s.type == StepType::Hotkey || !s.keys.empty()) {
         ojson arr = ojson::array();
         for (const auto& k : s.keys) arr.push_back(k);

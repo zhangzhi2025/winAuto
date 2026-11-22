@@ -36,9 +36,21 @@ bool decimalInRange(const std::string& text, std::uint64_t maxValue) {
     return value > 0 && value <= maxValue;
 }
 
+bool validVariableName(const std::string& name) {
+    if (name.empty() || name.size() > kMaxWorkflowDataKeyLength) return false;
+    const auto alpha = [](unsigned char ch) {
+        return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
+    };
+    if (!alpha(static_cast<unsigned char>(name.front()))) return false;
+    return std::all_of(name.begin() + 1, name.end(), [&](unsigned char ch) {
+        return alpha(ch) || (ch >= '0' && ch <= '9');
+    });
+}
+
 class Checker {
 public:
-    explicit Checker(ValidationReport& r) : r_(r) {}
+    Checker(ValidationReport& r, std::set<std::string> sensitiveVariables)
+        : r_(r), sensitiveVariables_(std::move(sensitiveVariables)) {}
 
     void error(const std::string& path, const std::string& code, const std::string& msg) {
         r_.issues.push_back(Issue{Severity::Error, path, code, msg, false});
@@ -388,7 +400,7 @@ public:
                 error(sub(path, "locator"), "script_field_not_allowed", "script steps do not use locators");
             }
             if (s.text || s.textFromPrompt || s.sensitive || !s.keys.empty() || s.durationMs ||
-                s.expect || s.retry || s.condition || s.times || s.maxIterations || s.intervalMs ||
+                s.variable || s.valueFrom || s.expect || s.retry || s.condition || s.times || s.maxIterations || s.intervalMs ||
                 !s.body.empty() || !s.elseBody.empty()) {
                 error(path, "script_field_not_allowed", "script steps cannot contain fields for other step types");
             }
@@ -434,7 +446,7 @@ public:
                 error(sub(path, "expect"), "launch_field_not_allowed",
                       "launch_program does not support expect");
             }
-            if (s.locator || s.text || s.textFromPrompt || s.sensitive || !s.keys.empty() ||
+            if (s.locator || s.text || s.textFromPrompt || s.sensitive || s.variable || s.valueFrom || !s.keys.empty() ||
                 s.durationMs || s.condition || s.times || s.maxIterations || s.intervalMs ||
                 !s.body.empty() || !s.elseBody.empty()) {
                 error(path, "launch_field_not_allowed",
@@ -463,27 +475,52 @@ public:
             }
         }
 
+        if (s.type == StepType::GetValue) {
+            if (!s.variable) {
+                error(sub(path, "variable"), "missing_field", "get_value requires an output variable name");
+            } else if (!validVariableName(*s.variable)) {
+                error(sub(path, "variable"), "invalid_variable",
+                      "variable must start with an ASCII letter or underscore and contain only letters, digits, or underscores");
+            }
+            if (s.text || s.textFromPrompt || s.valueFrom) {
+                error(path, "get_value_field_not_allowed",
+                      "get_value only accepts locator, variable, and sensitive value settings");
+            }
+        } else if (s.variable) {
+            error(sub(path, "variable"), "variable_not_allowed", "variable is only valid on get_value steps");
+        }
+
         if (s.type == StepType::InputText || s.type == StepType::SetValue) {
-            const bool hasText = s.text.has_value();
+            const int sourceCount = static_cast<int>(s.text.has_value()) +
+                                    static_cast<int>(s.textFromPrompt) +
+                                    static_cast<int>(s.valueFrom.has_value());
             if (s.type == StepType::InputText && s.method == InputMethod::Clipboard) {
-                if (s.sensitive || s.textFromPrompt) {
+                const bool sensitiveSource =
+                    s.valueFrom && sensitiveVariables_.count(*s.valueFrom) != 0;
+                if (s.sensitive || s.textFromPrompt || sensitiveSource) {
                     error(sub(path, "method"), "sensitive_clipboard",
                           "sensitive or prompted text must not go through the clipboard "
                           "(clipboard history and sync can store it)");
                 }
-                if (hasText && s.text->size() > kMaxClipboardBytes) {
+                if (s.text && s.text->size() > kMaxClipboardBytes) {
                     error(sub(path, "text"), "text_too_long",
                           "clipboard text is limited to " + std::to_string(kMaxClipboardBytes / 1024) + " KiB");
                 }
             }
-            if (hasText && s.textFromPrompt) {
-                error(path, "text_conflict", "text and textFrom=prompt cannot be used together");
-            } else if (!hasText && !s.textFromPrompt) {
+            if (sourceCount != 1) {
                 error(sub(path, "text"), "text_required",
-                      "provide text, or textFrom=\"prompt\" to ask at run time");
-            } else if (hasText && s.text->empty()) {
+                      "provide exactly one of text, textFrom=\"prompt\", or valueFrom.variable");
+            }
+            if (s.text && s.text->empty()) {
                 error(sub(path, "text"), "text_required", "text must not be empty");
             }
+            if (s.valueFrom && !validVariableName(*s.valueFrom)) {
+                error(sub(sub(path, "valueFrom"), "variable"), "invalid_variable",
+                      "variable must start with an ASCII letter or underscore and contain only letters, digits, or underscores");
+            }
+        } else if (s.valueFrom) {
+            error(sub(path, "valueFrom"), "value_source_not_allowed",
+                  "valueFrom is only valid on set_value and input_text steps");
         }
 
         if (s.type == StepType::Hotkey) checkHotkey(s, path);
@@ -522,6 +559,7 @@ public:
 
 private:
     ValidationReport& r_;
+    std::set<std::string> sensitiveVariables_;
 };
 
 }  // namespace
@@ -590,7 +628,13 @@ bool isSupportedKey(const std::string& key) {
 
 ValidationReport validateWorkflow(const Workflow& wf) {
     ValidationReport report;
-    Checker c(report);
+    std::set<std::string> sensitiveVariables;
+    for (const StepRow& row : flattenSteps(wf)) {
+        if (row.step->type == StepType::GetValue && row.step->sensitive && row.step->variable) {
+            sensitiveVariables.insert(*row.step->variable);
+        }
+    }
+    Checker c(report, std::move(sensitiveVariables));
 
     c.checkWorkflowData(wf.initialDataJson);
 

@@ -185,6 +185,40 @@ TEST(click_requires_locator) {
     CHECK(check(withStep(s)).find("locator_required", "steps[1].locator") != nullptr);
 }
 
+TEST(value_transfer_steps_require_valid_variables_and_exactly_one_text_source) {
+    Step get = step("READ", StepType::GetValue);
+    get.locator = Locator{uia("source", "Edit")};
+    get.variable = "accountNumber";
+    CHECK(check(withStep(get)).ok());
+
+    get.variable = "not-valid";
+    CHECK(check(withStep(get)).has("invalid_variable"));
+    get.variable.reset();
+    CHECK(check(withStep(get)).has("missing_field"));
+
+    Step input = step("WRITE", StepType::InputText);
+    input.valueFrom = "accountNumber";
+    CHECK(check(withStep(input)).ok());
+    input.text = "literal";
+    CHECK(check(withStep(input)).has("text_required"));
+    input.text.reset();
+    input.valueFrom = "bad variable";
+    CHECK(check(withStep(input)).has("invalid_variable"));
+}
+
+TEST(clipboard_rejects_variables_produced_as_sensitive_values) {
+    Workflow wf = minimalWorkflow();
+    Step get = step("READ", StepType::GetValue);
+    get.locator = Locator{uia("source", "Edit")};
+    get.variable = "accountNumber";
+    get.sensitive = true;
+    Step input = step("WRITE", StepType::InputText);
+    input.valueFrom = "accountNumber";
+    input.method = InputMethod::Clipboard;
+    wf.steps.insert(wf.steps.end(), {get, input});
+    CHECK(check(wf).has("sensitive_clipboard"));
+}
+
 TEST(mouse_actions_require_locators) {
     for (StepType type : {StepType::MouseMove, StepType::MouseClick}) {
         Step s = step("S2", type);

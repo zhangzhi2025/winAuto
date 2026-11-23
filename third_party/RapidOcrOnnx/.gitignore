@@ -143,6 +143,8 @@ onnxruntime-gpu/*
 !onnxruntime-gpu/linux/OnnxRuntimeConfig.cmake
 onnxruntime-static/*
 !/onnxruntime-static/OnnxRuntimeWrapper.cmake
+onnxruntime-share/*
+!/onnxruntime-share/OnnxRuntimeWrapper.cmake
 opencv-static/*
 !/opencv-static/OpenCVWrapperConfig.cmake
 opencv-shared/

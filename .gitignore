@@ -3,6 +3,7 @@ build-copilot-x86/
 build-copilot/
 build-ocr-on/
 build-win32/
+build-vs2022-win32/
 out/
 .vs/
 .vscode/

@@ -51,6 +51,10 @@ else()
     message(STATUS "Qt5 Widgets/Network not found, skipping ui (set CMAKE_PREFIX_PATH to your Qt 5.15 kit)")
 endif()
 
+# The stock-monitor domain library is portable; its standalone GUI is added
+# only when the Windows/Qt Widgets prerequisites are available.
+add_subdirectory(stock_monitor)
+
 if(WINAUTO_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

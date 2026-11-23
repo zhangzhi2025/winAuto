@@ -15,6 +15,7 @@
 | 5 图像识别 | 🟡 代码完成，待 Windows 编译与验证 | 灰度 ZNCC 模板匹配（core，已测试）+ GDI 截屏 + WIC 读图；`shot` / `find-image` 命令；清单见 `tests/manual/stage5-windows-checklist.md` |
 | 6 截取模板 / 失败截图 / 剪贴板输入 / 条件与循环 | 🟡 代码完成，待 Windows 编译与验证 | 界面"截取模板"按钮 + core 模板评估；失败时截取目标窗口；剪贴板粘贴（备份/还原/不进历史）；`if` / `repeat` / `while`；清单见 `tests/manual/stage6-windows-checklist.md` |
 | OCR RapidOcrOnnx CLIB | 🟡 Win32 DLL/script OCR 已接入，定位待 region API | 使用 `third_party/rapidocr/win-CLIB-CPU-Win32` 与 `third_party/rapidocr/models`；当前 DLL 只返回纯文字，不提供文字框，因此不能进行 OCR 点击定位或方向筛选 |
+| 独立看盘应用 | 🟡 OCR 推理已通过样例冒烟测试 | `stock-monitor` 单独进程支持导入图像/只读捕获可见窗口；构建优先使用 `onnxruntime-share/windows-x86` 动态包，VS2019/v142 下 OCR 目标成功链接，RapidOcrOnnx 样例图文字框推理通过 |
 
 ## 构建（Windows，Visual Studio 2019 / 2022 + MSVC）
 
@@ -34,6 +35,7 @@ ctest -C Debug --output-on-failure
 若使用 `third_party/rapidocr/win-CLIB-CPU-Win32` 的 RapidOcrOnnx DLL，需用 `-A Win32` 并追加 `-DWINAUTO_ENABLE_OCR=ON`。CMake 会复制 DLL 与模型到程序输出目录。该 CLIB API 仅返回拼接文字，脚本可通过 `automation.ocr("窗口别名")` 读取 `text`；需要 OCR 区域定位/点击时，必须换用返回文字框坐标的 RapidOcrOnnx 接口。
 
 - 找不到 Qt Widgets/Network 或 WebSockets 时会明确跳过 `ui`，core、cli 和不依赖 Qt 的测试照常构建。
+- Windows Qt Widgets 可用时会单独生成 `stock-monitor`；它不依赖 `winauto-ui` 或工作流执行目标。窗口捕获只读取桌面像素，不激活目标窗口；被遮挡时结果可能包含遮挡窗口。
 - 也可以直接用 Visual Studio 的"打开本地文件夹"打开本目录（CMake 项目）。
 - 非 Windows 平台只能构建 core、cli 和测试（CI 友好）。
 
@@ -115,6 +117,7 @@ schemas/       workflow.schema.json（draft-07，仅作文档和编辑器提示�
 examples/      示例流程
 tests/         单元测试、Fake 适配器、Schema / 纯净性检查
 third_party/   nlohmann/json 3.11.3（仅在 core/*.cpp 内使用）
+stock_monitor/ 独立看盘程序、平台无关颜色/行关联算法和只读 Windows 捕获
 ```
 
 ## 流程 JSON v1 要点

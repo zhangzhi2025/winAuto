@@ -16,12 +16,20 @@ set(WINAUTO_TEST_SOURCES
     test_flow_control.cpp
     test_script_runtime.cpp
     test_template_assess.cpp
+    test_font_color_analyzer.cpp
+    test_stock_row_assembler.cpp
+    test_stock_classifier.cpp
+    test_stock_monitor_service.cpp
+    test_stock_config.cpp
 )
 
 foreach(src ${WINAUTO_TEST_SOURCES})
     get_filename_component(name ${src} NAME_WE)
     add_executable(${name} ${src} testing_main.cpp)
     target_link_libraries(${name} PRIVATE winauto_core)
+    if(src MATCHES "^test_(font_color_analyzer|stock_row_assembler|stock_classifier|stock_monitor_service|stock_config)\\.cpp$")
+        target_link_libraries(${name} PRIVATE stock_monitor_core)
+    endif()
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_include_directories(${name} SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
     target_compile_definitions(${name} PRIVATE WINAUTO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -41,6 +49,32 @@ if(WINAUTO_ENABLE_OCR AND WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_BINARY_DIR}/models" "$<TARGET_FILE_DIR:test_ocr_runtime>/models")
     add_test(NAME test_ocr_runtime COMMAND test_ocr_runtime)
+endif()
+
+if(TARGET stock_monitor_rapidocr)
+    add_executable(test_stock_ocr_runtime
+        test_stock_ocr_runtime.cpp
+        testing_main.cpp
+    )
+    target_include_directories(test_stock_ocr_runtime PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/stock_monitor/core
+        ${CMAKE_SOURCE_DIR}/stock_monitor/platform_win
+    )
+    target_compile_definitions(test_stock_ocr_runtime PRIVATE
+        WINAUTO_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    target_link_libraries(test_stock_ocr_runtime PRIVATE stock_monitor_rapidocr Qt5::Gui)
+    get_target_property(stock_monitor_runtime_dlls stock_monitor_rapidocr STOCK_MONITOR_RUNTIME_DLLS)
+    foreach(runtime_dll IN LISTS stock_monitor_runtime_dlls)
+        if(EXISTS "${runtime_dll}")
+            add_custom_command(TARGET test_stock_ocr_runtime POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${runtime_dll}" "$<TARGET_FILE_DIR:test_stock_ocr_runtime>"
+            )
+        endif()
+    endforeach()
+    add_test(NAME test_stock_ocr_runtime COMMAND test_stock_ocr_runtime)
 endif()
 
 if(Qt5_FOUND)
@@ -81,6 +115,9 @@ endif()
 # core 纯净性检查：core/ 下不得引用 Win32 / COM / Qt 头文件
 add_test(NAME core_purity
     COMMAND ${CMAKE_COMMAND} -DCORE_DIR=${CMAKE_SOURCE_DIR}/core -P ${CMAKE_CURRENT_SOURCE_DIR}/check_core_purity.cmake)
+add_test(NAME stock_monitor_core_purity
+    COMMAND ${CMAKE_COMMAND} -DCORE_DIR=${CMAKE_SOURCE_DIR}/stock_monitor/core
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_core_purity.cmake)
 
 # CLI 冒烟测试
 add_test(NAME cli_validate_examples

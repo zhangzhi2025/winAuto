@@ -51,6 +51,8 @@ cmake --build build-stock-monitor --config Debug --target stock-monitor
 
 运行 `build-stock-monitor\stock_monitor\Debug\stock-monitor.exe`（或 CMake 实际生成路径）。确认它作为单独进程启动；WinAuto UI/CLI 不必运行。当前可用操作为导入图像、枚举窗口及主动捕获可见客户区；OCR 依赖未补齐时界面会明确显示阻塞诊断，不能执行识别。
 
+部署到其他电脑时，将 `stock-monitor.exe`、同目录下的运行库 DLL 和旁边的 `models` 文件夹一起复制。OCR 从运行中 EXE 所在目录的 `models` 子目录加载，不依赖构建机路径或进程当前工作目录；缺少模型时错误消息会显示实际检查路径和缺失文件。
+
 如果 RapidOcrOnnx/OpenCV/ONNX Runtime 无法在上述工具链和架构下链接，先解决或记录精确的 native dependency 缺失，不要切换到只能返回拼接文本的 CLIB 并伪造框坐标。显式启用 `-DSTOCK_MONITOR_ENABLE_RAPIDOCR=ON` 会在依赖不完整时以可读错误终止配置。
 
 ## First local analysis

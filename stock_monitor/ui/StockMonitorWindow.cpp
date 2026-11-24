@@ -13,13 +13,14 @@
 #include <QScrollArea>
 #include <QStringList>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include <cstring>
-
+#include "RegionWorkspace.h"
 #include "StockWindowCapture.h"
+#include "UiImageUtils.h"
 #ifdef STOCK_MONITOR_HAS_RAPIDOCR
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -27,43 +28,13 @@
 #endif
 
 namespace stock_monitor {
-namespace {
-
-QString toQString(const std::wstring& text) {
-    return QString::fromWCharArray(text.data(), static_cast<int>(text.size()));
-}
-
-QImage toQImage(const Image& image) {
-    QImage result(image.width, image.height, QImage::Format_RGBA8888);
-    for (int y = 0; y < image.height; ++y) {
-        std::memcpy(result.scanLine(y),
-                    image.rgba.data() + static_cast<std::size_t>(y) * image.stride,
-                    static_cast<std::size_t>(image.width) * 4U);
-    }
-    return result;
-}
-
-Image fromQImage(const QImage& source) {
-    const QImage rgba = source.convertToFormat(QImage::Format_RGBA8888);
-    Image image;
-    image.width = rgba.width();
-    image.height = rgba.height();
-    image.stride = static_cast<std::size_t>(image.width) * 4U;
-    image.rgba.resize(image.stride * static_cast<std::size_t>(image.height));
-    for (int y = 0; y < image.height; ++y) {
-        std::memcpy(image.rgba.data() + static_cast<std::size_t>(y) * image.stride,
-                    rgba.constScanLine(y), image.stride);
-    }
-    return image;
-}
-
-}  // namespace
 
 StockMonitorWindow::StockMonitorWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("WinAuto Stock Monitor"));
     resize(1000, 720);
 
-    auto* central = new QWidget(this);
+    auto* tabs = new QTabWidget(this);
+    auto* central = new QWidget(tabs);
     auto* layout = new QVBoxLayout(central);
     auto* controls = new QHBoxLayout();
     importButton_ = new QPushButton(QStringLiteral("导入截图"), central);
@@ -107,6 +78,11 @@ StockMonitorWindow::StockMonitorWindow(QWidget* parent) : QMainWindow(parent) {
     layout->addWidget(scroll, 1);
     setCentralWidget(central);
 
+    tabs->addTab(central, QStringLiteral("看盘分析"));
+    workspace_ = new RegionWorkspace(tabs);
+    tabs->addTab(workspace_, QStringLiteral("选定区域识别"));
+    setCentralWidget(tabs);
+
     connect(importButton_, &QPushButton::clicked, this, [this] { loadImage(); });
     connect(refreshButton, &QPushButton::clicked, this, [this] { refreshWindows(); });
     connect(captureButton_, &QPushButton::clicked, this, [this] { captureWindow(); });
@@ -115,6 +91,11 @@ StockMonitorWindow::StockMonitorWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 void StockMonitorWindow::closeEvent(QCloseEvent* event) {
+    if (workspace_ != nullptr && !workspace_->confirmClose()) {
+        event->ignore();
+        return;
+    }
+    if (workspace_ != nullptr) workspace_->shutdown();
     if (cancellation_) cancellation_->store(true);
     ++analysisGeneration_;
     QMainWindow::closeEvent(event);

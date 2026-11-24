@@ -5,13 +5,54 @@
 #include <exception>
 #include <filesystem>
 #include <string>
+#include <vector>
 
+#include <windows.h>
 #include <opencv2/core.hpp>
 
 #include "OcrLite.h"
 
 namespace stock_monitor {
 namespace {
+
+std::filesystem::path executableDirectory(std::string& error) {
+    std::vector<wchar_t> path(512);
+    for (;;) {
+        SetLastError(ERROR_SUCCESS);
+        const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        if (length == 0) {
+            error = "Could not locate the running executable (Win32 error " +
+                    std::to_string(GetLastError()) + ").";
+            return {};
+        }
+        if (length < path.size() - 1U) {
+            return std::filesystem::path(std::wstring(path.data(), length)).parent_path();
+        }
+        if (path.size() >= 32768U) {
+            error = "The running executable path exceeds the supported Windows path length.";
+            return {};
+        }
+        path.resize(std::min(path.size() * 2U, 32768U));
+    }
+}
+
+bool hasRequiredModels(const std::filesystem::path& directory, std::string& missing) {
+    const char* const filenames[] = {
+        "ch_PP-OCRv3_det_infer.onnx",
+        "ch_ppocr_mobile_v2.0_cls_train.onnx",
+        "ch_PP-OCRv3_rec_infer.onnx",
+        "ppocr_keys_v1.txt"
+    };
+    for (const char* filename : filenames) {
+        const auto path = directory / filename;
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(path, error)) {
+            if (!missing.empty()) missing += ", ";
+            missing += path.string();
+        }
+    }
+    return missing.empty();
+}
 
 float averageRecognitionConfidence(const std::vector<float>& scores) {
     if (scores.empty()) return 0.0F;
@@ -32,19 +73,20 @@ struct RapidOcrAdapter::Impl {
 };
 
 RapidOcrAdapter::RapidOcrAdapter() : impl_(std::make_unique<Impl>()) {
-#ifndef STOCK_MONITOR_MODEL_DIR
-    impl_->error = "OCR model directory was not configured at build time.";
-#else
-    const std::filesystem::path modelDir(STOCK_MONITOR_MODEL_DIR);
+    const auto executableDir = executableDirectory(impl_->error);
+    if (executableDir.empty()) return;
+    const std::filesystem::path modelDir = executableDir / "models";
+    std::string missing;
+    if (!hasRequiredModels(modelDir, missing)) {
+        impl_->error = "RapidOcrOnnx model files are missing beside the running executable. "
+                       "Expected directory: " + modelDir.string() +
+                       ". Missing or unreadable files: " + missing;
+        return;
+    }
     const auto det = modelDir / "ch_PP-OCRv3_det_infer.onnx";
     const auto cls = modelDir / "ch_ppocr_mobile_v2.0_cls_train.onnx";
     const auto rec = modelDir / "ch_PP-OCRv3_rec_infer.onnx";
     const auto keys = modelDir / "ppocr_keys_v1.txt";
-    if (!std::filesystem::is_regular_file(det) || !std::filesystem::is_regular_file(cls) ||
-        !std::filesystem::is_regular_file(rec) || !std::filesystem::is_regular_file(keys)) {
-        impl_->error = "One or more RapidOcrOnnx model files are missing.";
-        return;
-    }
     try {
         impl_->ocr.setNumThread(2);
         impl_->ocr.initLogger(false, false, false);
@@ -55,7 +97,6 @@ RapidOcrAdapter::RapidOcrAdapter() : impl_(std::make_unique<Impl>()) {
     } catch (...) {
         impl_->error = "RapidOcrOnnx model initialization failed with an unknown runtime error.";
     }
-#endif
 }
 
 RapidOcrAdapter::~RapidOcrAdapter() = default;

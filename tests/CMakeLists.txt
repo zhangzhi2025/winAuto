@@ -21,13 +21,19 @@ set(WINAUTO_TEST_SOURCES
     test_stock_classifier.cpp
     test_stock_monitor_service.cpp
     test_stock_config.cpp
+    test_region_config.cpp
+    test_region_geometry.cpp
+    test_region_table_parser.cpp
+    test_region_config_json.cpp
+    test_region_scheduler.cpp
+    test_region_capture_result.cpp
 )
 
 foreach(src ${WINAUTO_TEST_SOURCES})
     get_filename_component(name ${src} NAME_WE)
     add_executable(${name} ${src} testing_main.cpp)
     target_link_libraries(${name} PRIVATE winauto_core)
-    if(src MATCHES "^test_(font_color_analyzer|stock_row_assembler|stock_classifier|stock_monitor_service|stock_config)\\.cpp$")
+    if(src MATCHES "^test_(font_color_analyzer|stock_row_assembler|stock_classifier|stock_monitor_service|stock_config|region_config|region_geometry|region_table_parser|region_config_json|region_scheduler|region_capture_result)\\.cpp$")
         target_link_libraries(${name} PRIVATE stock_monitor_core)
     endif()
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -74,6 +80,11 @@ if(TARGET stock_monitor_rapidocr)
             )
         endif()
     endforeach()
+    add_custom_command(TARGET test_stock_ocr_runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_BINARY_DIR}/stock_monitor/models"
+                "$<TARGET_FILE_DIR:test_stock_ocr_runtime>/models"
+    )
     add_test(NAME test_stock_ocr_runtime COMMAND test_stock_ocr_runtime)
 endif()
 

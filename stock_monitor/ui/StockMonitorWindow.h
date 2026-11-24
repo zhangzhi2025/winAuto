@@ -22,6 +22,8 @@ namespace stock_monitor {
 class RapidOcrAdapter;
 #endif
 
+class RegionWorkspace;
+
 class StockMonitorWindow final : public QMainWindow {
 public:
     explicit StockMonitorWindow(QWidget* parent = nullptr);
@@ -46,6 +48,7 @@ private:
     QPushButton* analyzeButton_ = nullptr;
     Image currentImage_;
     StockMonitorConfig config_;
+    RegionWorkspace* workspace_ = nullptr;
     QFutureWatcher<AnalysisResult>* analysisWatcher_ = nullptr;
     std::shared_ptr<std::atomic_bool> cancellation_;
     std::uint64_t analysisGeneration_ = 0;

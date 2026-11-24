@@ -4,8 +4,16 @@ add_library(stock_monitor_core STATIC
     core/StockRowAssembler.cpp
     core/StockClassifier.cpp
     core/StockMonitorService.cpp
+    core/RegionConfig.cpp
+    core/RegionCaptureModel.cpp
+    core/RegionGeometry.cpp
+    core/RegionTableParser.cpp
+    core/RegionConfigJson.cpp
+    core/RegionScheduler.cpp
 )
 target_include_directories(stock_monitor_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/core)
+# nlohmann/json 仅在 .cpp 内使用，不暴露给使用者
+target_include_directories(stock_monitor_core SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 
 option(STOCK_MONITOR_ENABLE_RAPIDOCR "Build the RapidOcrOnnx C++ text-block adapter" OFF)
 set(STOCK_MONITOR_OCR_AVAILABLE OFF)
@@ -109,9 +117,6 @@ if(STOCK_MONITOR_ENABLE_RAPIDOCR)
         configure_file("${STOCK_MONITOR_MODEL_SOURCE_DIR}/${model}"
                        "${STOCK_MONITOR_MODEL_OUTPUT_DIR}/${model}" COPYONLY)
     endforeach()
-    target_compile_definitions(stock_monitor_rapidocr PRIVATE
-        STOCK_MONITOR_MODEL_DIR="${STOCK_MONITOR_MODEL_OUTPUT_DIR}"
-    )
     set(STOCK_MONITOR_OCR_AVAILABLE ON)
 endif()
 
@@ -124,6 +129,12 @@ if(WIN32)
         add_executable(stock-monitor
             platform_win/StockWindowCapture.cpp
             ui/main.cpp
+            ui/UiImageUtils.cpp
+            ui/RegionScan.cpp
+            ui/RegionSelector.cpp
+            ui/RegionEditor.cpp
+            ui/RegionSessionController.cpp
+            ui/RegionWorkspace.cpp
             ui/StockMonitorWindow.cpp
         )
         if(STOCK_MONITOR_OCR_AVAILABLE)
